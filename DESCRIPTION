@@ -47,8 +47,9 @@ Suggests:
     R.rsp,
     rugarch,
     strucchange,
-    tinytest
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
 VignetteBuilder: R.rsp
 URL: https://github.com/braverock/FactorAnalytics
-RoxygenNote: 7.3.1
+RoxygenNote: 7.3.3
 Encoding: UTF-8

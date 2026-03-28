@@ -15,3 +15,7 @@ sandbox
 ^\.vimrc
 ^codecov\.yml$
 extra_data
+^\.positai$
+^\.claude$
+^AGENTS\.md$
+^architecture\.md$

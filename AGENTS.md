@@ -1,0 +1,206 @@
+# FactorAnalytics — Agent Rules
+
+## Project Context
+
+This is the `GreenGrassBlueOcean/FactorAnalytics` fork, a production-grade R package
+for fundamental and time-series factor models. The refactoring plan and full
+architecture reference are in:
+
+- `.positai/plans/2026-03-27-2145-phased-refactoring-plan-for-greengrassblueoceanfactoranalytics-fork.md`
+- `architecture.md`
+
+## Phase Status
+
+| Phase | Status | Exit Criterion |
+|---|---|---|
+| **Phase 0 — Foundation** | ✅ Complete | 0 errors, 0 warnings, 0 notes in R CMD check. 22 fixtures, 8 test files, all passing. |
+| **Phase 1 — Dependency Pruning** | 🔲 Not started | R CMD check clean. All Phase 0 tests pass. Package installs with hard imports only. |
+| **Phase 2 — Performance** | 🔲 Not started | All fixtures match within tolerance. Performance benchmarked. |
+| **Phase 3 — API Hardening** | 🔲 Not started | Unbalanced panel tests pass. `fmCov` dimensionality verified. |
+
+## Test Infrastructure
+
+- **Framework:** `testthat` 3.0+ (Edition 3). Configured in `DESCRIPTION` and
+  `tests/testthat.R`.
+- **Fixtures:** 22 `.rds` files in `tests/testthat/fixtures/`. Generated from the
+  **unmodified** v2.4.2 upstream code by `tests/testthat/helpers/generate_fixtures.R`.
+  Each fixture stores only numeric components (no full `lm`/`ffm` objects).
+- **Test files:** 8 files in `tests/testthat/`:
+  - `test-fitFfm.R` — 5 FFM model branches + structure/dimension invariants
+  - `test-fitTsfm.R` — 3 TSFM paths + manual `lm()` cross-validation
+  - `test-fmCov.R` — Covariance matrices + identity verification
+  - `test-riskDecomp.R` — fmSdDecomp, fmVaRDecomp, fmEsDecomp
+  - `test-portDecomp.R` — Portfolio-level Sd/VaR/ES decomposition
+  - `test-fmRsq.R` — R-squared computation
+  - `test-fmTstats.R` — T-statistics computation
+  - `test-input-validation.R` — Error handling, weight validation
+- **Tolerances:** Coefficients/factor returns `1e-10`, covariance `1e-8`, risk decomp `1e-6`.
+- **Setup:** `tests/testthat/setup.R` loads all bundled datasets and prepares the
+  `dat145` subset used across multiple test files.
+
+## Known Bugs (Discovered During Phase 0)
+
+### `fmCov()` fails on FFM fits with character exposures (sector models)
+
+`fmCov.ffm()` does `object$data[, object$factor.names]`. For sector models,
+`factor.names` contains factor level names (e.g., `"COSTAP"`, `"ENERGY"`) rather than
+column names. This causes `"undefined columns selected"`. The bug affects all
+downstream consumers that call `fmCov` internally (risk decomposition, portfolio
+decomposition) when the FFM was fitted with sector exposures.
+
+**Workaround:** The covariance identity `beta %*% factor.cov %*% t(beta) + diag(resid.var)`
+can be computed directly from the `ffm` object slots without calling `fmCov()`.
+
+**Fix target:** Phase 3 (API Hardening).
+
+### `fitTsfm()` excess return convention
+
+`fitTsfm()` subtracts `rf` from **both** asset returns **and** factor returns before
+fitting. This is important for cross-validation: manual `lm()` replication must also
+subtract rf from both the response and the regressors.
+
+## R Package Standards
+
+- Use `testthat` (>= 3.0.0) for testing.
+- Use roxygen2 for documentation.
+- All code must pass `R CMD check` with 0 errors, 0 warnings.
+
+## data.table Programming Rules
+
+These rules are **mandatory** for all `data.table` code in this package. They exist to
+ensure clean `R CMD check` results, predictable semantics, and zero reliance on
+non-standard evaluation tricks that break in production.
+
+### 1. Use `list()`, never `.()` shorthand
+
+`.()` is an alias for `list()` inside `data.table` expressions but is harder to grep,
+harder to read for non-data.table users, and creates ambiguity with other uses of `.`
+in R (e.g., formula notation, magrittr placeholder).
+
+```r
+# WRONG
+dt[, .(mean_ret = mean(ret)), by = .(date, sector)]
+
+# CORRECT
+dt[, list(mean_ret = mean(ret)), by = list(date, sector)]
+```
+
+### 2. Use `.SD` / `.SDcols`, never `..` prefix notation
+
+The `..` prefix (`dt[, ..cols]`) is a convenience that silently reaches into the parent
+scope. Use `.SD` with `.SDcols` for explicit, traceable column selection.
+
+```r
+# WRONG
+cols <- c("ret", "mktcap")
+dt[, ..cols]
+
+# CORRECT
+cols <- c("ret", "mktcap")
+dt[, .SD, .SDcols = cols]
+```
+
+### 3. Declare NSE variables in function body to suppress R CMD check NOTEs
+
+Any symbol used inside `data.table`'s `j` or `by` expressions that is not a column
+name visible to the R parser will trigger a "no visible binding for global variable"
+NOTE. Declare them as `NULL` at the top of the function body.
+
+```r
+myFunction <- function(dt) {
+  # Due to NSE notes related to data.table in R CMD check
+  ret <- mktcap <- sector <- NULL
+
+  dt[, list(mean_ret = mean(ret)), by = sector]
+}
+```
+
+Group all NSE declarations together, with a comment explaining why they exist.
+
+### 4. No global variables — ever
+
+Do not assign to or read from the global environment. All state must be passed through
+function arguments and return values. No `<<-`, no `assign(..., envir = .GlobalEnv)`,
+no `get()` on global names.
+
+If you find yourself reaching for a global, you are missing a function parameter.
+
+### 5. No Cartesian joins
+
+Cartesian (cross) joins are **forbidden**. If a `data.table` merge or join produces
+more rows than the larger of the two inputs, the logic is wrong.
+
+A Cartesian join is almost always a symptom of:
+- Missing or incorrect join keys
+- Duplicate keys in one or both tables
+- A flawed algorithm that should use a grouped operation instead
+
+```r
+# WRONG — will silently produce N×M rows
+result <- dt1[dt2, on = "date", allow.cartesian = TRUE]
+
+# If you think you need a Cartesian join, restructure the problem:
+# - Add the missing key column
+# - Deduplicate before joining
+# - Use a grouped operation (by =) instead of a join
+```
+
+If `allow.cartesian = TRUE` appears anywhere in the codebase, it is a bug.
+
+### 6. Prefer `setkeyv()` over `setkey()` for programmatic column names
+
+When column names are stored in variables (which is common in this package via
+`specObj$date.var`, `specObj$asset.var`, etc.), always use `setkeyv()`:
+
+```r
+# WRONG (only works with literal column names)
+setkey(dt, date, asset)
+
+# CORRECT (works with variable column names)
+d_ <- specObj$date.var
+a_ <- specObj$asset.var
+setkeyv(dt, c(a_, d_))
+```
+
+### 7. Use `set()` only for scalar updates; prefer vectorized `:=` otherwise
+
+The `set()` function is designed for updating individual cells by reference. Do not use
+it inside `for` loops to iterate row-by-row over a data.table — this defeats the
+purpose of data.table's vectorized engine.
+
+```r
+# WRONG — row-by-row loop
+for (i in 1:nrow(dt)) {
+  set(dt, i, "sigma2", lambda * dt$sigma2[i - 1] + (1 - lambda) * dt$x[i])
+}
+
+# CORRECT — vectorized recursive filter
+dt[, sigma2 := as.numeric(
+  stats::filter(x = (1 - lambda) * x, filter = lambda,
+                method = "recursive", init = init_val)
+), by = asset_id]
+```
+
+### 8. Use `get()` or `.SD` for programmatic column access in `j`, not bare strings
+
+```r
+# WRONG — returns the string, not the column values
+dt[, "ret"]
+
+# CORRECT options
+dt[, get(ret_var)]
+dt[, .SD, .SDcols = ret_var]
+```
+
+### 9. Always copy before modifying by reference if the input should not mutate
+
+`data.table` modifies in place. If a function receives a `data.table` and should not
+alter the caller's copy, use `data.table::copy()` before any `:=` or `set()` calls.
+
+```r
+myFunction <- function(dt) {
+  dt <- data.table::copy(dt)
+  dt[, new_col := 1]
+  dt
+}
+```
