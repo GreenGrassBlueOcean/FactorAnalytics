@@ -10,6 +10,7 @@ jobs:
   R-CMD-check:
     name: ${{ matrix.config.os }} (${{ matrix.config.r }})
     runs-on: ${{ matrix.config.os }}
+    continue-on-error: ${{ matrix.config.continue-on-error || false }}
 
     strategy:
       fail-fast: false
@@ -17,7 +18,8 @@ jobs:
         config:
           - {os: macOS-latest, r: 'release'}
           - {os: windows-latest, r: 'release'}
-          - {os: ubuntu-latest, r: 'devel', http-user-agent: 'release'}
+          # R-devel may fail due to upstream deps (e.g., lazyeval PREXPR removal)
+          - {os: ubuntu-latest, r: 'devel', http-user-agent: 'release', continue-on-error: true}
           - {os: ubuntu-latest, r: 'release'}
           - {os: ubuntu-latest, r: 'oldrel-1'}
 
