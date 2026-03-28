@@ -11,7 +11,7 @@ fitFfmDT(
   lambda = 0.9,
   GARCH.params = list(omega = 0.09, alpha = 0.1, beta = 0.81),
   GARCH.MLE = FALSE,
-  lmrobdet.control.para.list = lmrobdet.control(),
+  lmrobdet.control.para.list = NULL,
   ...
 )
 }

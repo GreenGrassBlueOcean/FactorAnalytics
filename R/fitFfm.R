@@ -52,8 +52,8 @@
 #' @importFrom xts as.xts
 #' @importFrom zoo as.yearmon
 #' @importFrom PerformanceAnalytics checkData skewness kurtosis
-#' @importFrom robustbase scaleTau2 covOGK
-#' @importFrom RobStatTM lmrobdetMM covRob covClassic
+#'
+#'
 #' @importFrom stats lm as.formula coef contr.treatment fitted mad median
 #' model.matrix na.exclude na.fail na.omit var
 #'

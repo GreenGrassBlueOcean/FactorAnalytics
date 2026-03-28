@@ -28,6 +28,7 @@ test_that("fitTsfm LS reproduces fixture", {
 
 # --- TSFM Robust ---
 test_that("fitTsfm Robust reproduces fixture", {
+  skip_if_not_installed("RobStatTM")
   fix <- readRDS(test_path("fixtures", "fixture_tsfm_robust.rds"))
   fit <- fitTsfm(
     asset.names = colnames(managers[, 1:6]),
@@ -44,6 +45,7 @@ test_that("fitTsfm Robust reproduces fixture", {
 
 # --- TSFM lars ---
 test_that("fitTsfm lars reproduces fixture", {
+  skip_if_not_installed("lars")
   fix <- readRDS(test_path("fixtures", "fixture_tsfm_lars.rds"))
   fit <- fitTsfm(
     asset.names = colnames(managers[, 1:6]),

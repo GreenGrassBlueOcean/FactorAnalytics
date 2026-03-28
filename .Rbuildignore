@@ -19,3 +19,4 @@ extra_data
 ^\.claude$
 ^AGENTS\.md$
 ^architecture\.md$
+^bugreport-fmCov-sector-models\.md$

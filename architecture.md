@@ -2,7 +2,7 @@
 
 > Reference document for the GreenGrassBlueOcean refactoring effort.
 > Generated from `braverock/FactorAnalytics` v2.4.2 (2024-12-12).
-> Updated 2026-03-28 with Phase 0 findings.
+> Updated 2026-03-28 with Phase 0, 0.5, and 1 (Dependency Pruning) findings.
 
 ---
 
@@ -288,23 +288,81 @@ A second, related bug: `fitFfmDT.R` did not set `rownames(beta) <- asset.names` 
 - Regression tests added: `test-fmCov.R` (sector + sector-only), `test-riskDecomp.R`
   (sector Sd/VaR/ES decomposition with summation invariant).
 
-### 4.4 Monte Carlo Subsystem (Isolated)
+### 4.4 Pre-Existing Upstream Issues (Discovered Phase 0.5)
+
+These are **not regressions** — they exist in upstream v2.4.2 and were uncovered while
+writing smoke tests.
+
+1. **`plot.ffm` group plot 3 requires explicit `asset.variable`:** The function has no
+   default for this parameter and cannot infer it from the `ffm` object. Callers must
+   pass e.g. `which.plot.group = 3, asset.variable = "TICKER"` explicitly.
+
+2. **`plot.tsfm` group plots 9–11 emit vector recycling warnings:** When assets have
+   unequal history (as in the `managers` dataset), `fmVaRDecomp` produces matrices with
+   rows that don't align, triggering "longer object length is not a multiple of shorter
+   object length" warnings from internal arithmetic.
+
+3. **`repReturn` and `repExposures` crash on small datasets:** Both functions fail with
+   "subscript out of bounds" when called on the 28-stock DJIA dataset. They work
+   correctly on the 145-stock WLS model, which is the intended production use case.
+   Root cause is hard-coded assumptions about minimum number of assets/dates.
+
+### 4.5 Bugs Fixed During Phase 1 (Dependency Pruning)
+
+These are pre-existing bugs in upstream v2.4.2 code that were discovered and fixed
+during the Phase 1 `requireNamespace()` guard work.
+
+1. **`fitTsfm()` unconditionally calls `lmrobdet.control()`** (lines 198–200): Even
+   when `fit.method = "LS"`, the function executed `lmrobdet.control()` to parse robust
+   control parameters. This meant every `fitTsfm()` call required `RobStatTM` as a hard
+   dependency even when robust regression was not requested. **Fix:** Wrapped in
+   `if (fit.method == "Robust")` guard.
+
+2. **`fitFfmDT()` default parameter evaluates `lmrobdet.control()`** (line 453):
+   `lmrobdet.control.para.list = lmrobdet.control()` as a function default. While R
+   evaluates defaults lazily, this still requires `RobStatTM` at parse time for
+   `R CMD check`. **Fix:** Changed default to `NULL`; create the control list inside
+   the function body only when `fit.method %in% c("ROB", "W-ROB")`.
+
+3. **`fitFfmDT()` calls `ugarchspec()`/`ugarchfit()` without namespace prefix**
+   (lines 1178–1181): These `rugarch` function names were declared as NSE `NULL`
+   variables to silence R CMD check, but the calls lacked `rugarch::` prefix and had
+   no `requireNamespace()` guard. Would crash at runtime if `rugarch` wasn't loaded.
+   **Fix:** Added `requireNamespace("rugarch")` guard and `rugarch::` prefix.
+
+4. **`plot.ffm.R` and `plot.tsfm.R` unconditionally fit skew-t distribution**:
+   `sn::st.mple()` was called during plot setup, not inside the specific plot branch
+   that uses the result (plot 11 in `plot.ffm`, plot 12 in `plot.tsfm`). This meant
+   any call to these plot functions required `sn`, even for unrelated plot types.
+   **Fix:** Deferred the `sn::st.mple()` + `sn::dst()` calls into the specific plot
+   branches where they're used, with `requireNamespace("sn")` guards.
+
+5. **`summary.tsfm()` HC/HAC path had informal guard**: Line 91 used
+   `message("requires package lmtest")` instead of a proper `requireNamespace()` +
+   `stop()`. **Fix:** Replaced with `requireNamespace()` guards for both `lmtest` and
+   `sandwich`, with informative `stop()` messages.
+
+### 4.6 Monte Carlo Subsystem (Isolated)
 
 ```
 fmmc()                  [R/fmmc.R]
   └─► .fmmc.proc()     Uses fitTsfm internally
-  └─► .fmmc.worker()   Parallel via foreach/doSNOW
+  └─► .fmmc.worker()   Parallel via parallel::parLapply (Phase 1: replaced foreach/doSNOW)
   └─► fmmc.estimate.se()
 
 fmmcSemiParam()         [R/fmmcSemiParam.R]
-  └─► tseries::tsbootstrap()   Stationary bootstrap for factors
-  └─► sn::rst()                Skew-t residual simulation
+  └─► tseries::tsbootstrap()   Stationary bootstrap for factors (Suggests)
+  └─► sn::rst()                Skew-t residual simulation (Suggests)
   └─► CornishFisher.R          CF residual simulation
 ```
 
 These functions are self-contained and have no shared state with the main pipeline.
-They are the only consumers of `doSNOW`, `foreach`, `parallel`, `RCurl`, `tseries`,
-and `sn`.
+They are the primary consumers of `parallel` (Suggests), `tseries` (Suggests), `sn`
+(Suggests), and `boot` (Suggests). Phase 1 removed `doSNOW`, `foreach`, and `RCurl`
+entirely — parallel execution now uses `parallel::parLapply()` with explicit
+`clusterExport()` (PSOCK workers need variable export), and sequential fallback uses
+`lapply()`. The single `RCurl::merge.list()` call was replaced with native R list
+merging.
 
 ---
 
@@ -343,34 +401,54 @@ residuals, riskDecomp, summary
 
 ---
 
-## 6. Dependency Map
+## 6. Dependency Map (Post–Phase 1)
 
-### 6.1 Hard Dependencies (Required for Core Path)
+Phase 1 reduced hard Imports from 18 packages to 6 (plus base R). Three packages
+(`RCurl`, `doSNOW`, `foreach`) were removed entirely; 12 were moved to Suggests with
+`requireNamespace()` guards at every call site.
+
+### 6.1 Hard Dependencies (Imports — Required for Core Path)
 
 ```
-data.table        Panel data engine (fitFfmDT, specFfm, all DT functions)
-xts / zoo         Time series objects (factor.returns, residuals, all tsfm)
-PerformanceAnalytics  checkData(), Return.cumulative(), chart.* in plots
-lattice           Trellis plots in repRisk, repReturn, repExposures, fmTstats, fmRsq
-methods           is() checks
-stats / graphics / grDevices / utils   Base R
+data.table             Panel data engine (fitFfmDT, specFfm, all DT functions)
+xts / zoo              Time series objects (factor.returns, residuals, all tsfm)
+PerformanceAnalytics   checkData(), Return.cumulative(), chart.* in plots
+lattice                Trellis plots in repRisk, repReturn, repExposures, fmTstats, fmRsq
+methods                is() checks
+stats / graphics / grDevices / utils   Base R (not listed in Imports)
 ```
 
-### 6.2 Optional Dependencies (Gated by User Arguments)
+### 6.2 Optional Dependencies (Suggests — Guarded with `requireNamespace()`)
 
-| Package | Gating condition | Files |
+All call sites use `requireNamespace("pkg", quietly = TRUE)` with an informative
+`stop()` message directing the user to `install.packages()`.
+
+| Package | Gating condition | Files | Guard location |
+|---|---|---|---|
+| `RobStatTM` | `fit.method = "Rob"/"W-Rob"/"Robust"`, `rob.stats = TRUE` | fitFfmDT, fitTsfm, plot.tsfm | Function entry (fitFfmDT, fitTsfm); robust branch (plot.tsfm) |
+| `robustbase` | `rob.stats = TRUE` | fitFfmDT (extractRegressionStats, calcAssetWeights) | Before `scaleTau2()` / `covOGK()` calls |
+| `lars` | `variable.selection = "lars"` | fitTsfm | Top of `SelectLars()` |
+| `leaps` | `variable.selection = "subsets"` | fitTsfm | Top of `SelectAllSubsets()` |
+| `sn` | Skew-t density overlay; skew-t residuals | plot.ffm (plot 11), plot.tsfm (plot 12), fmmcSemiParam | Inside plot branch; before `rst()` call |
+| `sandwich` | `se.type = "HC"/"HAC"` | summary.tsfm | Inside HC/HAC `if` block |
+| `lmtest` | `se.type = "HC"/"HAC"` | summary.tsfm | Inside HC/HAC `if` block (co-guarded with sandwich) |
+| `boot` | Bootstrap SE estimation | fmmc, fmmcSemiParam | At `.fmmc.se()` entry; at `boot()` call site |
+| `tseries` | `boot.method = "block"` | fmmcSemiParam | Inside block bootstrap `if` block |
+| `parallel` | `fmmc(parallel = TRUE)` | fmmc | Inside `if (parallel)` block |
+| `rugarch` | `GARCH.MLE = TRUE` or `stdReturn = TRUE` | fitFfmDT (calcAssetWeights) | Before `ugarchspec()` / `ugarchfit()` calls |
+| `corrplot` | Correlation plot types (group plots 7–8) | plot.ffm, plot.tsfm | *(pre-existing guards)* |
+| `strucchange` | Structural break tests (individual plots 15–17) | plot.tsfm | *(pre-existing guards)* |
+| `HH` | *(legacy, no active call sites found)* | — | — |
+| `R.rsp` | Vignette builder only | — | `VignetteBuilder` field |
+| `testthat` | Testing only | tests/ | — |
+
+### 6.3 Removed Dependencies (Phase 1)
+
+| Package | Was | Replacement |
 |---|---|---|
-| `RobStatTM` | `fit.method = "Rob"` or `"W-Rob"`, or `rob.stats = TRUE` | fitFfm, fitFfmDT, fitTsfm, fitTsfm.control, extractRegressionStats, plot.tsfm |
-| `robustbase` | `rob.stats = TRUE` | fitFfm, fitFfmDT (extractRegressionStats, calcAssetWeights) |
-| `lars` | `variable.selection = "lars"` | fitTsfm, fitTsfm.control |
-| `sn` | Skew-t density overlay in plots; skew-t residuals in fmmcSemiParam | plot.ffm, plot.tsfm, fmmcSemiParam |
-| `doSNOW` / `foreach` / `parallel` | Parallel execution in fmmc | fmmc.R only |
-| `RCurl` | Single `merge.list()` call | fmmc.R only |
-| `tseries` | Stationary bootstrap | fmmcSemiParam.R only |
-| `sandwich` | HC/HAC standard errors in tsfm summary | summary.tsfm.r only |
-| `leaps` | `variable.selection = "subsets"` | fitTsfm.R only |
-| `boot` | Bootstrap in fmmcSemiParam | fmmcSemiParam.R only |
-| `rugarch` | `GARCH.MLE = TRUE` or `stdReturn = TRUE` | fitFfmDT.R (calcAssetWeights), fitFfm |
+| `RCurl` | Imports | Single `merge.list()` call → native `c(args, add.args[setdiff(...)])` |
+| `doSNOW` | Imports | `registerDoSNOW()` → `parallel::parLapply()` with `clusterExport()` |
+| `foreach` | Imports | `foreach %dopar%` → `parallel::parLapply()`; `foreach %do%` → `lapply()` |
 
 ---
 
@@ -497,7 +575,7 @@ converts the data *back* to data.frame (line 1267).
 | `wtsDjiaGmvLo.rda` | 392 B | GMV long-only weights for DJIA |
 | `wtsStocks145GmvLo.rda` | 1.8 KB | GMV long-only weights for 145 stocks |
 
-All currently tracked via Git LFS (to be migrated in a future commit — see plan Phase 0.4).
+All tracked via Git LFS.
 
 ### 9.2 Test Fixtures
 
@@ -531,6 +609,52 @@ unmodified v2.4.2 code. Each stores only numeric slots (no `lm` objects).
 
 **Note on risk decomposition percentages:** `pcSd`, `pcVaR`, `pcES` are on the 0–100
 scale (percentages), not 0–1 (proportions).
+
+### 9.3 Smoke Tests (Phase 0.5)
+
+`tests/testthat/test-smoke-methods.R` contains 91 run-and-check assertions across 23
+`test_that()` blocks. These are **not** fixture-backed; they verify "does not crash" and
+"returns expected type/class" for S3 methods that had zero test coverage.
+
+| Category | Blocks | Assertions | Coverage targets |
+|---|---|---|---|
+| Accessor & summary methods | 10 | 28 | `coef`, `residuals`, `fitted`, `predict`, `print`, `summary` for both `ffm` and `tsfm` |
+| Plot methods | 5 | 50 | `plot.ffm` (11 group + 13 individual), `plot.tsfm` (9 group + 15 individual) |
+| Reporting functions | 8 | 13 | `repExposures`, `repReturn`, `repRisk` (both `ffm` and `tsfm`) |
+
+**Skips and suppressions (pre-existing upstream issues, not regressions):**
+- `plot.ffm` / `plot.tsfm` group plots 7–8 skipped (`corrplot` is in Suggests)
+- `plot.ffm` individual plot 11 skipped (skew-t density requires separate fit)
+- `plot.tsfm` individual plots 15–17 skipped (`strucchange` is in Suggests)
+- `plot.tsfm` group plots 9–11 suppress vector recycling warnings (unequal asset history in `managers` dataset)
+
+**Test models (defined in `setup.R` and file-local `local()` blocks):**
+- `fit_ffm_style`: 2-factor style-only (P2B, EV2S) on DJIA
+- `fit_ffm_sector`: Sector + style with intercept on DJIA
+- `fit_ffm_wls`: 145-stock WLS production model (used for `repReturn` / `repExposures`)
+- `fit_tsfm_ls`: TSFM LS on managers (6 assets, 3 factors)
+
+### 9.4 Total Test Inventory
+
+| File | Blocks | Focus | Type |
+|---|---|---|---|
+| `test-fitFfm.R` | 5 | FFM model branches + structure invariants | Fixture-backed |
+| `test-fitTsfm.R` | 3 | TSFM paths + manual `lm()` cross-validation | Fixture-backed |
+| `test-fmCov.R` | 5 | Covariance matrices + identity/PSD verification | Fixture-backed |
+| `test-riskDecomp.R` | 6 | Asset-level Sd/VaR/ES decomposition | Fixture-backed |
+| `test-portDecomp.R` | 9 | Portfolio-level decomposition + weight validation | Fixture-backed |
+| `test-fmRsq.R` | 2 | R-squared computation | Fixture-backed |
+| `test-fmTstats.R` | 2 | T-statistics computation | Fixture-backed |
+| `test-input-validation.R` | 5 | Error handling, weight validation | Behavioural |
+| `test-smoke-methods.R` | 23 | S3 methods, plots, reporting | Smoke (run-and-check) |
+| **Total** | **60** | | **254 assertions** |
+
+**Conditional skips (added Phase 1):** Three test blocks skip when optional packages
+are absent:
+- `test-fitFfm.R` W-Rob fixture test → `skip_if_not_installed("RobStatTM")` +
+  `skip_if_not_installed("robustbase")`
+- `test-fitTsfm.R` Robust fixture test → `skip_if_not_installed("RobStatTM")`
+- `test-fitTsfm.R` lars fixture test → `skip_if_not_installed("lars")`
 
 ---
 
@@ -598,7 +722,19 @@ These are properties that **must** hold after every phase:
 
 7. **TSFM excess return symmetry:** When `rf.name` is provided, `fitTsfm()` subtracts rf from both asset returns and factor returns. Manual cross-validation of betas must replicate this convention (see Section 3.3).
 
-## 12. CI / Notifications
+## 12. Phase Status
+
+| Phase | Status | Key Deliverable | Key Numbers |
+|---|---|---|---|
+| **0 — Foundation** | ✅ Complete | testthat migration, 22 fixtures, CI/CD | 163 assertions; 0 errors, 0 warnings |
+| **0.5 — Smoke Tests** | ✅ Complete | 91 smoke tests for S3 methods | 254 total assertions; coverage 23.4% → 46.4% |
+| **1 — Dependency Pruning** | ✅ Complete | Imports 18 → 6; 3 packages removed; 12 to Suggests | 254 tests pass; 5 pre-existing bugs fixed |
+| **2 — Performance** | 🔲 Not started | Vectorize 5 for loops; strip lm() objects | — |
+| **3 — API Hardening** | 🔲 Not started | Unbalanced panels; fmCov dimensionality; PA integration | — |
+
+---
+
+## 13. CI / Notifications
 
 The CI workflow (`.github/workflows/slack-notify-build.yml`) runs R CMD check on 5 OS/R-version combinations. It inherited Slack notification steps from the upstream `braverock/FactorAnalytics` repo. These steps are guarded with `if: env.SLACK_BOT_TOKEN != ''` so they are silently skipped when the `SLACK_NOTIFICATIONS_BOT_TOKEN` secret is not configured.
 

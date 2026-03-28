@@ -22,32 +22,31 @@ License: GPL-2
 Depends: 
     R (>= 3.5)
 Imports:
-    boot,
     data.table,
-    doSNOW,
-    foreach,
-    lars,
     lattice,
-    leaps,
     methods,
-    parallel,
     PerformanceAnalytics,
-    RCurl,
-    RobStatTM,
-    robustbase,
-    sandwich,
-    sn,
-    tseries,
     xts,
     zoo
 Suggests:
+    boot,
     corrplot,
+    doSNOW,
+    foreach,
     HH,
+    lars,
+    leaps,
     lmtest,
+    parallel,
     R.rsp,
+    RobStatTM,
+    robustbase,
     rugarch,
+    sandwich,
+    sn,
     strucchange,
-    testthat (>= 3.0.0)
+    testthat (>= 3.0.0),
+    tseries
 Config/testthat/edition: 3
 VignetteBuilder: R.rsp
 URL: https://github.com/braverock/FactorAnalytics

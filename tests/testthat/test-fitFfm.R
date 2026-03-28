@@ -80,6 +80,8 @@ test_that("fitFfm WLS sector+style reproduces fixture", {
 
 # --- W-Rob robust (DJIA, sector + P2B) ---
 test_that("fitFfm W-Rob reproduces fixture", {
+  skip_if_not_installed("RobStatTM")
+  skip_if_not_installed("robustbase")
   fix <- readRDS(test_path("fixtures", "fixture_ffm_wrob.rds"))
   fit <- fitFfm(
     data = factorDataSetDjia5Yrs,

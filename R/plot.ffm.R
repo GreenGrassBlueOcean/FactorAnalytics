@@ -25,7 +25,7 @@
 #'
 #' @importFrom xts as.xts merge.xts
 #' @importFrom zoo index
-#' @importFrom sn dst rst st.mple
+#'
 #' @importFrom lattice panel.barchart panel.grid barchart
 #' @importFrom PerformanceAnalytics chart.TimeSeries chart.ACFplus chart.Histogram
 #' chart.QQPlot chart.Correlation chart.Boxplot
@@ -190,9 +190,7 @@ plot.ffm <- function(x, which=NULL, f.sub=1:2, a.sub=1:6,
     den <- density(Residuals)
     xval <- den$x
     den.norm <- dnorm(xval, mean=mean(Residuals), sd=resid.sd)
-    dp.st <- st.mple(x=matrix(1,nrow(Residuals)), y=as.vector(Residuals), opt.method="BFGS")$dp
-    den.st <- dst(xval, dp=dp.st)
-    dp.st <- signif(dp.st, 2)
+    # Skew-t fitting deferred to plot 11 (requires sn package)
 
     # plot selection
     repeat {
@@ -283,15 +281,22 @@ plot.ffm <- function(x, which=NULL, f.sub=1:2, a.sub=1:6,
                                 round(resid.sd,4),")",sep=""), side=3, line=0.25, cex=0.8)
              }, "11L" = {
                ## Non-parametric density of residuals with skew-t overlaid
-               ymax <- ceiling(max(0,den$y,den.st))
-               plot(den, xlab="Return residuals", lwd=lwd, col=colorset[1],
-                    ylim=c(0,ymax), main=paste("Density of residuals:",i), ...)
-               rug(Residuals, col="dimgray")
-               lines(xval, den.st, col=colorset[2], lty="dashed", lwd=lwd)
-               legend(x=legend.loc, lty=c("solid","dashed"), col=c(colorset[1:2]),
-                      lwd=lwd, bty="n", legend=c("KDE","Skew-t"))
-               mtext(text=paste("Skew-t (xi=",dp.st[1],", omega=",dp.st[2],", alpha=",dp.st[3],
-                                ", nu=",dp.st[4],")",sep=""), side=3, line=0.25, cex=0.8)
+               if (!requireNamespace("sn", quietly = TRUE)) {
+                 message("Package 'sn' is required for the skew-t density plot. Skipping.")
+               } else {
+                 dp.st <- sn::st.mple(x=matrix(1,nrow(Residuals)), y=as.vector(Residuals), opt.method="BFGS")$dp
+                 den.st <- sn::dst(xval, dp=dp.st)
+                 dp.st <- signif(dp.st, 2)
+                 ymax <- ceiling(max(0,den$y,den.st))
+                 plot(den, xlab="Return residuals", lwd=lwd, col=colorset[1],
+                      ylim=c(0,ymax), main=paste("Density of residuals:",i), ...)
+                 rug(Residuals, col="dimgray")
+                 lines(xval, den.st, col=colorset[2], lty="dashed", lwd=lwd)
+                 legend(x=legend.loc, lty=c("solid","dashed"), col=c(colorset[1:2]),
+                        lwd=lwd, bty="n", legend=c("KDE","Skew-t"))
+                 mtext(text=paste("Skew-t (xi=",dp.st[1],", omega=",dp.st[2],", alpha=",dp.st[3],
+                                  ", nu=",dp.st[4],")",sep=""), side=3, line=0.25, cex=0.8)
+               }
              }, "12L" = {
                ## Histogram of residuals with non-parametric density and normal overlaid
                methods <- c("add.density","add.normal","add.rug")

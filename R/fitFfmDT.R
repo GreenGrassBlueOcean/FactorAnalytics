@@ -439,7 +439,6 @@ standardizeReturns <- function(specObj,
 #' @details this function operates on the data inside the specObj fits a fundamental factor
 #' model to the data
 #' @seealso \code{\link{specFfm}} for information on the definition of the specFfm object.
-#' @importFrom RobStatTM lmrobdetMM
 #' @importFrom stats complete.cases
 #'
 #' @export
@@ -450,7 +449,7 @@ fitFfmDT <- function(ffMSpecObj,
                      lambda = 0.9,
                      GARCH.params = list(omega = 0.09, alpha = 0.1, beta = 0.81),
                      GARCH.MLE = FALSE,
-                     lmrobdet.control.para.list = lmrobdet.control(),
+                     lmrobdet.control.para.list = NULL,
                      ...){
 
   # Due to NSE notes related to data.table in R CMD check
@@ -460,6 +459,17 @@ fitFfmDT <- function(ffMSpecObj,
 
   fit.method = toupper(fit.method[1])
   fit.method <- match.arg(arg = fit.method, choices = toupper(c("LS","WLS","ROB","W-ROB")), several.ok = F )
+
+  # Guard robust regression dependencies
+  if (fit.method %in% c("ROB", "W-ROB")) {
+    if (!requireNamespace("RobStatTM", quietly = TRUE)) {
+      stop("Package 'RobStatTM' is required for fit.method = '", fit.method,
+           "'. Install it with: install.packages('RobStatTM')", call. = FALSE)
+    }
+    if (is.null(lmrobdet.control.para.list)) {
+      lmrobdet.control.para.list <- RobStatTM::lmrobdet.control()
+    }
+  }
 
   resid.scaleType <- toupper(resid.scaleType[1])
   resid.scaleType <- match.arg(arg = resid.scaleType, choices = c("STDDEV","EWMA","ROBUSTEWMA", "GARCH"))
@@ -644,7 +654,7 @@ fitFfmDT <- function(ffMSpecObj,
 
 
     reg.listDT <- betasDT[which(!idxNA), .(id = .(toRegress[[1]][[a_]]),
-                                           reg.list = .(lmrobdetMM(formula = fm.formula,
+                                           reg.list = .(RobStatTM::lmrobdetMM(formula = fm.formula,
                                                                    data = toRegress[[1]],
                                                                    na.action = na.omit,
                                                                    control =  lmrobdet.control.para.list))), by = d_]
@@ -672,7 +682,7 @@ fitFfmDT <- function(ffMSpecObj,
 
       reg.listDT <-
         SecondStepRegression[ complete.cases(SecondStepRegression[,ffMSpecObj$exposure.vars, with = F]) ,
-                              .(reg.list = .(lmrobdetMM(
+                              .(reg.list = .(RobStatTM::lmrobdetMM(
                                 formula = fm.formula,
                                 data = .SD,
                                 weights = W,
@@ -715,7 +725,7 @@ fitFfmDT <- function(ffMSpecObj,
 #'
 #' @seealso \code{\link{specFfm}} and \code{\link{fitFfmDT}} for information on the definition of the specFfm
 #' object and the usage of fitFfmDT.
-#' @importFrom RobStatTM covRob
+#'
 #' @importFrom data.table rbindlist dcast as.xts.data.table last
 #' @importFrom stats coefficients
 #'
@@ -786,10 +796,13 @@ extractRegressionStats <- function(specObj, fitResults, full.resid.cov=FALSE){
 
   # residual covariances----
   if (specObj$rob.stats) {
-
-    resid.var <- apply(coredata(residuals1), 2, scaleTau2)^2
+    if (!requireNamespace("robustbase", quietly = TRUE)) {
+      stop("Package 'robustbase' is required for rob.stats = TRUE. ",
+           "Install it with: install.packages('robustbase')", call. = FALSE)
+    }
+    resid.var <- apply(coredata(residuals1), 2, robustbase::scaleTau2)^2
     if (full.resid.cov) {
-      resid.cov <- covOGK(coredata(residuals1), sigmamu=scaleTau2, n.iter=1)$cov
+      resid.cov <- robustbase::covOGK(coredata(residuals1), sigmamu=robustbase::scaleTau2, n.iter=1)$cov
     } else {
       resid.cov <- diag(resid.var)
     }
@@ -958,11 +971,15 @@ extractRegressionStats <- function(specObj, fitResults, full.resid.cov=FALSE){
 
   # factor covariances ----
   if (specObj$rob.stats) {
+    if (!requireNamespace("RobStatTM", quietly = TRUE)) {
+      stop("Package 'RobStatTM' is required for rob.stats = TRUE. ",
+           "Install it with: install.packages('RobStatTM')", call. = FALSE)
+    }
     if (kappa(na.exclude(coredata(factor.returns))) < 1e+10) {
-      factor.cov <- covRob(coredata(factor.returns))$cov
+      factor.cov <- RobStatTM::covRob(coredata(factor.returns))$cov
     } else {
       cat("Covariance matrix of factor returns is singular.\n")
-      factor.cov <- covRob(coredata(factor.returns))$cov
+      factor.cov <- RobStatTM::covRob(coredata(factor.returns))$cov
     }
   } else {
     factor.cov <- cov(coredata(factor.returns), use = "pairwise.complete.obs")
@@ -1108,7 +1125,6 @@ calcFLAM <- function(specObj, modelStats, fitResults, analysis = c("ISM", "NEW")
 }
 
 # private functions ----
-#' @importFrom robustbase scaleTau2 covOGK
 #' @importFrom data.table := set .SD
 #'
 #Calculate Weights For Second Weighted Regression (private function)
@@ -1123,7 +1139,7 @@ calcAssetWeightsForRegression <- function(specObj,
                                           GARCH.MLE = FALSE) {
 
   # Due to NSE notes related to data.table in R CMD check
-  . = reg.list = id = idx = resid.var = ugarchspec = ugarchfit = w = NULL
+  . = reg.list = id = idx = resid.var = w = NULL
   # See data.table "Importing data.table" vignette
 
   resid.scaleType = toupper(resid.scaleType[1])
@@ -1147,7 +1163,11 @@ calcAssetWeightsForRegression <- function(specObj,
   resid.DT[, idx := 1:.N, by = id] # this is needed for path dependent calculations
 
   if (specObj$rob.stats) {
-    resid.DT[, resid.var := scaleTau2(residuals)^2, by = id]
+    if (!requireNamespace("robustbase", quietly = TRUE)) {
+      stop("Package 'robustbase' is required for rob.stats = TRUE. ",
+           "Install it with: install.packages('robustbase')", call. = FALSE)
+    }
+    resid.DT[, resid.var := robustbase::scaleTau2(residuals)^2, by = id]
   } else {
     resid.DT[, resid.var := var(residuals), by = id]
   }
@@ -1175,10 +1195,14 @@ calcAssetWeightsForRegression <- function(specObj,
 
       #Compute parameters using MLE
       if(GARCH.MLE){
-        garch.spec = ugarchspec(variance.model=list(model="sGARCH", garchOrder=c(1,1)),
+        if (!requireNamespace("rugarch", quietly = TRUE)) {
+          stop("Package 'rugarch' is required for GARCH.MLE = TRUE. ",
+               "Install it with: install.packages('rugarch')", call. = FALSE)
+        }
+        garch.spec = rugarch::ugarchspec(variance.model=list(model="sGARCH", garchOrder=c(1,1)),
                                 mean.model=list(armaOrder=c(0,0), include.mean = FALSE),
                                 distribution.model="norm")
-        resid.DT[, w := ugarchfit(garch.spec, data = .SD)@fit$var, .SDcols = c("residuals"), by = id]
+        resid.DT[, w := rugarch::ugarchfit(garch.spec, data = .SD)@fit$var, .SDcols = c("residuals"), by = id]
 
 
       } else {

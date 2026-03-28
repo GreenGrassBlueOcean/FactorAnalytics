@@ -16,7 +16,6 @@
 #' statistically valid method of calculating standard errors for the lasso
 #' predictions.
 #'
-#' @importFrom sandwich vcovHC.default vcovHAC.default
 #'
 #' @param object an object of class \code{tsfm} returned by \code{fitTsfm}.
 #' @param se.type one of "Default", "HC" or "HAC" option for computing HC/HAC
@@ -57,9 +56,13 @@
 #' # summary of factor model fit for all assets
 #' summary(fit)
 #'
-#' # Summary of factor model, using lmtest
-#' library(lmtest)
-#' summary(fit, "HAC")
+#' # Summary of factor model with HAC standard errors
+#' \donttest{
+#' if (requireNamespace("lmtest", quietly = TRUE) &&
+#'     requireNamespace("sandwich", quietly = TRUE)) {
+#'   summary(fit, "HAC")
+#' }
+#' }
 #'
 #' # summary of lm fit for a single asset
 #' summary(fit$asset.fit[[1]])
@@ -87,17 +90,24 @@ summary.tsfm <- function(object, se.type=c("Default","HC","HAC"), ...){
   sum.list <- lapply(object$asset.fit, summary)
 
   # convert to HC/HAC standard errors and t-stats if specified
-  if (se.type=="HC" | se.type=="HAC") {
-     message("requires package lmtest")
+  if (se.type == "HC" || se.type == "HAC") {
+    if (!requireNamespace("lmtest", quietly = TRUE)) {
+      stop("Package 'lmtest' is required for se.type = '", se.type, "'. ",
+           "Install it with: install.packages('lmtest')", call. = FALSE)
+    }
+    if (!requireNamespace("sandwich", quietly = TRUE)) {
+      stop("Package 'sandwich' is required for se.type = '", se.type, "'. ",
+           "Install it with: install.packages('sandwich')", call. = FALSE)
+    }
   }
   # extract coefficients separately for "lars" variable.selection method
   for (i in object$asset.names) {
     if (se.type=="HC") {
       sum.list[[i]]$coefficients <- lmtest::coeftest.default(object$asset.fit[[i]],
-                                                     vcov.=vcovHC.default)[,1:4]
+                                                     vcov.=sandwich::vcovHC.default)[,1:4]
     } else if (se.type=="HAC") {
       sum.list[[i]]$coefficients <- lmtest::coeftest.default(object$asset.fit[[i]],
-                                                     vcov.=vcovHAC.default)[,1:4]
+                                                     vcov.=sandwich::vcovHAC.default)[,1:4]
     }
   }
 

@@ -52,9 +52,9 @@
 #' }
 #' 
 #' @importFrom PerformanceAnalytics checkData
-#' @importFrom leaps regsubsets
-#' @importFrom RobStatTM step.lmrobdetMM
-#' @importFrom lars lars cv.lars
+#'
+#'
+#'
 #' @importFrom zoo index time<-
 #' @importFrom stats predict
 #' 
@@ -160,7 +160,6 @@
 #'                    data=managers, 
 #'                    variable.selection="lars", 
 #'                    lars.criterion="cv") 
-#' @importFrom RobStatTM lmrobdet.control
 #' @export
 
 fitTsfm <- function(asset.names, factor.names, mkt.name=NULL, rf.name=NULL, 
@@ -195,9 +194,18 @@ fitTsfm <- function(asset.names, factor.names, mkt.name=NULL, rf.name=NULL,
               names(control), 0L)
   lm.args <- control[m1, drop=TRUE]
   
-  m2 <-  match(names(as.list(args(lmrobdet.control ))), names(control), 0L)
-  
-  lmrobdetMM.args <- do.call(lmrobdet.control, control[m2, drop=TRUE])
+  if (fit.method == "Robust") {
+    if (!requireNamespace("RobStatTM", quietly = TRUE)) {
+      stop("Package 'RobStatTM' is required for fit.method = 'Robust'. ",
+           "Install it with: install.packages('RobStatTM')", call. = FALSE)
+    }
+    m2 <- match(names(as.list(args(RobStatTM::lmrobdet.control))),
+                names(control), 0L)
+    lmrobdetMM.args <- do.call(RobStatTM::lmrobdet.control,
+                               control[m2, drop = TRUE])
+  } else {
+    lmrobdetMM.args <- NULL
+  }
   
   m3 <-  match(c("scope","scale","direction","trace","steps","k"), 
                names(control), 0L)
@@ -307,7 +315,7 @@ NoVariableSelection <- function(dat.xts, asset.names, factor.names, fit.method,
       reg.list[[i]] <- do.call("lm", c(list(fm.formula,data=quote(reg.xts)),lm.args))
     } else if (fit.method == "Robust") {
 #	  require(RobStatTM)
-      reg.list[[i]] <- do.call("lmrobdetMM", c(list(fm.formula,data=quote(reg.xts),control=lmrobdetMM.args)))
+      reg.list[[i]] <- do.call(RobStatTM::lmrobdetMM, c(list(fm.formula,data=quote(reg.xts),control=lmrobdetMM.args)))
     } 
   } 
   reg.list  
@@ -346,12 +354,11 @@ SelectStepwise <- function(dat.xts, asset.names, factor.names, fit.method,
                                c(list(lm.fit), step.args)
                                )
     } else if (fit.method == "Robust") {
-#		require(RobStatTM)
-		lmrobdetMM.fit <- do.call("lmrobdetMM", 
+		lmrobdetMM.fit <- do.call(RobStatTM::lmrobdetMM, 
 		                          c(list(fm.formula, data=quote(reg.xts), 
 		                                 control=lmrobdetMM.args))
 		                          )
-      reg.list[[i]] <- do.call("step.lmrobdetMM", 
+      reg.list[[i]] <- do.call(RobStatTM::step.lmrobdetMM, 
                                c(list(lmrobdetMM.fit), step.args))
     } 
   }
@@ -364,7 +371,10 @@ SelectStepwise <- function(dat.xts, asset.names, factor.names, fit.method,
 SelectAllSubsets <- function(dat.xts, asset.names, factor.names, fit.method, 
                              lm.args, lmrobdetMM.args, regsubsets.args, nvmin, 
                              decay) {
-  
+  if (!requireNamespace("leaps", quietly = TRUE)) {
+    stop("Package 'leaps' is required for variable.selection = 'subsets'. ",
+         "Install it with: install.packages('leaps')", call. = FALSE)
+  }
   # initialize list object to hold the fitted objects
   reg.list <- list()
   
@@ -381,7 +391,7 @@ SelectAllSubsets <- function(dat.xts, asset.names, factor.names, fit.method,
     }
     
     # choose best subset of factors depending on specified subset size
-    fm.subsets <- do.call("regsubsets", c(list(fm.formula,
+    fm.subsets <- do.call(leaps::regsubsets, c(list(fm.formula,
                                                data=quote(reg.xts)), 
                                                regsubsets.args))
     sum.sub <- summary(fm.subsets)
@@ -409,8 +419,7 @@ SelectAllSubsets <- function(dat.xts, asset.names, factor.names, fit.method,
                                c(list(fm.formula,data=quote(reg.xts)), lm.args)
                                )
     } else if (fit.method == "Robust") {
-#	  require(RobStatTM)
-      reg.list[[i]] <- do.call("lmrobdetMM", 
+      reg.list[[i]] <- do.call(RobStatTM::lmrobdetMM, 
                                c(list(fm.formula,data=quote(reg.xts)), lmrobdetMM.args)
                                )
     } 
@@ -423,6 +432,10 @@ SelectAllSubsets <- function(dat.xts, asset.names, factor.names, fit.method,
 #
 SelectLars <- function(dat.xts, asset.names, factor.names, lars.args, 
                        cv.lars.args, lars.criterion) {
+  if (!requireNamespace("lars", quietly = TRUE)) {
+    stop("Package 'lars' is required for variable.selection = 'lars'. ",
+         "Install it with: install.packages('lars')", call. = FALSE)
+  }
   # initialize list object to hold the fitted objects and, vectors and matrices
   # for the other results
   asset.fit <- list()
@@ -442,9 +455,9 @@ SelectLars <- function(dat.xts, asset.names, factor.names, lars.args,
     xmat <- as.matrix(reg.xts[,factor.names])
     yvec <- as.matrix(reg.xts)[,i]
     # fit lars regression model
-    lars.fit <- do.call("lars", c(list(x=quote(xmat),y=quote(yvec)),lars.args))
+    lars.fit <- do.call(lars::lars, c(list(x=quote(xmat),y=quote(yvec)),lars.args))
     lars.sum <- summary(lars.fit)
-    lars.cv <- do.call("cv.lars", c(list(x=quote(xmat),y=quote(yvec),mode="step"),cv.lars.args))
+    lars.cv <- do.call(lars::cv.lars, c(list(x=quote(xmat),y=quote(yvec),mode="step"),cv.lars.args))
     
     # get the step that minimizes the "Cp" statistic or 
     # the K-fold "cv" mean-squared prediction error

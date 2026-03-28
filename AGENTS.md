@@ -14,9 +14,10 @@ architecture reference are in:
 | Phase | Status | Exit Criterion |
 |---|---|---|
 | **Phase 0 — Foundation** | ✅ Complete | 0 errors, 0 warnings, 0 notes in R CMD check. 22 fixtures, 8 test files, all passing. |
-| **Phase 1 — Dependency Pruning** | 🔲 Not started | R CMD check clean. All Phase 0 tests pass. Package installs with hard imports only. |
+| **Phase 0.5 — Smoke Tests** | ✅ Complete | 91 smoke assertions in `test-smoke-methods.R`. 254 total tests, 0 failures. Coverage: 23.4% → 46.4% (2,095 / 4,512 lines). |
+| **Phase 1 — Dependency Pruning** | 🔲 Not started | R CMD check clean. All Phase 0–0.5 tests pass. Package installs with hard imports only. |
 | **Phase 2 — Performance** | 🔲 Not started | All fixtures match within tolerance. Performance benchmarked. |
-| **Phase 3 — API Hardening** | 🔲 Not started | Unbalanced panel tests pass. `fmCov` dimensionality verified. |
+| **Phase 3 — API Hardening** | 🔲 Not started | Unbalanced panel tests pass. `fmCov` dimensionality verified. ||
 
 ## Test Infrastructure
 
@@ -25,7 +26,7 @@ architecture reference are in:
 - **Fixtures:** 22 `.rds` files in `tests/testthat/fixtures/`. Generated from the
   **unmodified** v2.4.2 upstream code by `tests/testthat/helpers/generate_fixtures.R`.
   Each fixture stores only numeric components (no full `lm`/`ffm` objects).
-- **Test files:** 8 files in `tests/testthat/`:
+- **Test files:** 9 files in `tests/testthat/`:
   - `test-fitFfm.R` — 5 FFM model branches + structure/dimension invariants
   - `test-fitTsfm.R` — 3 TSFM paths + manual `lm()` cross-validation
   - `test-fmCov.R` — Covariance matrices + identity verification
@@ -34,6 +35,8 @@ architecture reference are in:
   - `test-fmRsq.R` — R-squared computation
   - `test-fmTstats.R` — T-statistics computation
   - `test-input-validation.R` — Error handling, weight validation
+  - `test-smoke-methods.R` — 91 smoke tests for S3 methods, plots, reporting (Phase 0.5)
+- **Coverage:** 46.4% (2,095 / 4,512 lines). Baseline established on commit `4b58a6e`.
 - **Tolerances:** Coefficients/factor returns `1e-10`, covariance `1e-8`, risk decomp `1e-6`.
 - **Setup:** `tests/testthat/setup.R` loads all bundled datasets and prepares the
   `dat145` subset used across multiple test files.

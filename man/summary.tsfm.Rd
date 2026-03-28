@@ -69,9 +69,13 @@ fit <- fitTsfm(asset.names=colnames(managers[,(1:6)]),
 # summary of factor model fit for all assets
 summary(fit)
 
-# Summary of factor model, using lmtest
-library(lmtest)
-summary(fit, "HAC")
+# Summary of factor model with HAC standard errors
+\donttest{
+if (requireNamespace("lmtest", quietly = TRUE) &&
+    requireNamespace("sandwich", quietly = TRUE)) {
+  summary(fit, "HAC")
+}
+}
 
 # summary of lm fit for a single asset
 summary(fit$asset.fit[[1]])

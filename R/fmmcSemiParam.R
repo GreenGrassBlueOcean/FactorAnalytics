@@ -5,7 +5,6 @@
 #' chosen parametric distribution (Normal, Cornish-Fisher or Skew-t). Factor 
 #' returns are resampled through non-parametric or stationary bootstrap.
 #' 
-#' @importFrom tseries tsbootstrap
 #' 
 #' @param B number of bootstrap samples. Default is 1000.
 #' @param factor.ret \code{T x K} matrix or data.frame of factor returns having
@@ -174,6 +173,10 @@ fmmcSemiParam <- function (B=1000, factor.ret, beta, alpha, resid.par,
     boot.idx <- sample(x=TP, size=B, replace=TRUE)
   } else {
     # stationary block resampling
+    if (!requireNamespace("tseries", quietly = TRUE)) {
+      stop("Package 'tseries' is required for boot.method = 'block'. ",
+           "Install it with: install.packages('tseries')", call. = FALSE)
+    }
     boot.idx <- as.vector(tseries::tsbootstrap(x=1:TP, nb=ceiling(B/TP), type="stationary"))
     adj.B <- ceiling(B/TP)* TP - B
     if (adj.B > 0) {
@@ -199,7 +202,13 @@ fmmcSemiParam <- function (B=1000, factor.ret, beta, alpha, resid.par,
            "normal" = {if(ncol(resid.par)==1)sim.resid[,i] <- rnorm(n=B, mean=0, sd=resid.par[i,])
                         else if(ncol(resid.par)==2)sim.resid[,i] <- rnorm(n=B, mean=resid.par[i,1], sd=resid.par[i,2])}, 
            "Cornish-Fisher" = {sim.resid[,i] <- rCornishFisher(n=B, dp=resid.par[i,])}, 
-           "skew-t" = {sim.resid[,i] <- rst(n=B, dp=resid.par[i,])}
+           "skew-t" = {
+             if (!requireNamespace("sn", quietly = TRUE)) {
+               stop("Package 'sn' is required for resid.dist = 'skew-t'. ",
+                    "Install it with: install.packages('sn')", call. = FALSE)
+             }
+             sim.resid[,i] <- sn::rst(n=B, dp=resid.par[i,])
+           }
     )
     sim.fund.ret[,i] = 
       alpha[i,1] + boot.factor.ret %*% t(beta[i,,drop=FALSE]) + sim.resid[,i] # Bx1

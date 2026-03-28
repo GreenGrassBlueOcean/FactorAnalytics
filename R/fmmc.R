@@ -47,7 +47,6 @@
 #'    outer join of the factors and residuals. We use this joined data to create new
 #'    simulated returns. Returns together with factors define a joint empirical density.
 #'
-#' @importFrom RCurl merge.list
 #' @importFrom xts as.xts
 #'
 #' @param  R single vector of returns
@@ -86,7 +85,8 @@
     args <- list(asset.names=colnames(R),
         factor.names=colnames(factors.data), data=.data)
 
-    args <- merge.list(args,add.args)
+    # Merge args, keeping args values on name collision (x wins)
+    args <- c(args, add.args[setdiff(names(add.args), names(args))])
 
     # We do not need to remove NA's. Beta's do no change if NA's are not removed
     possibleError <- tryCatch(
@@ -188,8 +188,6 @@
 #' We use the boot call from the boot library for calculating the estimate and
 #' its standard error.
 #'
-#' @importFrom boot boot
-#'
 #' @param  fmmcObj object returned by fmmc proc. This is a comprehensive object
 #'         with all data for factors and returns.
 #' @param  nboot number of bootstap samples. Not sure how many repetations are
@@ -203,8 +201,13 @@
 #'
 .fmmc.se <- function(fmmcObj, nboot = 50, estimate.func, cl = NULL) {
 
+    if (!requireNamespace("boot", quietly = TRUE)) {
+      stop("Package 'boot' is required for bootstrap standard errors. ",
+           "Install it with: install.packages('boot')", call. = FALSE)
+    }
+
     parallel <- if(is.null(cl)) "no" else "snow"
-    ncpus <- if(is.null(cl)) 1 else detectCores()
+    ncpus <- if(is.null(cl)) 1 else parallel::detectCores()
 
     # length of factors
     TR <- nrow(fmmcObj$data$factors)
@@ -266,28 +269,30 @@
 #'
 #' @author Rohit Arora
 #'
-#' @import foreach
-#' @importFrom doSNOW registerDoSNOW
-#' @importFrom parallel makeCluster detectCores clusterEvalQ clusterExport stopCluster
-#'
 #' @export
 #'
 #'
 fmmc <- function(R, factors, parallel=FALSE, ...) {
 
-  ret <- NA
   assets.count <- ncol(R)
-  i <- NA
 
   if (parallel) {
-    cl <- makeCluster(detectCores())
-    registerDoSNOW(cl)
-    ret <- foreach (i = 1:assets.count) %dopar% .fmmc.worker(R[,i], factors, ...)
-    stopCluster(cl)
-  } else
-    ret <- foreach (i = 1:assets.count) %do% .fmmc.worker(R[,i], factors, ...)
+    cl <- parallel::makeCluster(parallel::detectCores())
+    on.exit(parallel::stopCluster(cl), add = TRUE)
+    parallel::clusterExport(cl,
+      varlist = c(".fmmc.worker", ".fmmc.proc", ".fmmc.default.args"),
+      envir = environment())
+    parallel::clusterEvalQ(cl, library(FactorAnalytics))
+    ret <- parallel::parLapply(cl, seq_len(assets.count), function(i) {
+      .fmmc.worker(R[, i], factors, ...)
+    })
+  } else {
+    ret <- lapply(seq_len(assets.count), function(i) {
+      .fmmc.worker(R[, i], factors, ...)
+    })
+  }
 
-  result <- ret[lapply(ret,length) > 1]
+  result <- ret[vapply(ret, function(x) length(x) > 1, logical(1))]
   result
 }
 
@@ -323,8 +328,9 @@ fmmc.estimate.se <- function(fmmcObjs, fun=NULL, se=FALSE, nboot=100,
 
     cl <- NULL
     if(parallel) {
-        cl <- makeCluster(detectCores())
-        clusterEvalQ(cl, library(xts))
+        cl <- parallel::makeCluster(parallel::detectCores())
+        on.exit(parallel::stopCluster(cl), add = TRUE)
+        parallel::clusterEvalQ(cl, library(xts))
     }
 
     result[,1] <- unlist(lapply(fmmcObjs, function(obj) fun(obj$bootdist$returns)))
@@ -334,8 +340,6 @@ fmmc.estimate.se <- function(fmmcObjs, fun=NULL, se=FALSE, nboot=100,
         result <- cbind(result, serr)
         colnames(result) <- c("estimate", "se")
     }
-
-    if(parallel) stopCluster(cl)
 
     result
 }
