@@ -1,7 +1,8 @@
 
 # Factor Analytics for asset return data
 
-[![R-CMD-check](https://github.com/braverock/FactorAnalytics/actions/workflows/slack-notify-build.yml/badge.svg)](https://github.com/braverock/FactorAnalytics/actions/workflows/slack-notify-build.yml)
+[![R-CMD-check](https://github.com/GreenGrassBlueOcean/FactorAnalytics/actions/workflows/slack-notify-build.yml/badge.svg)](https://github.com/GreenGrassBlueOcean/FactorAnalytics/actions/workflows/slack-notify-build.yml)
+[![codecov](https://codecov.io/gh/GreenGrassBlueOcean/FactorAnalytics/graph/badge.svg)](https://codecov.io/gh/GreenGrassBlueOcean/FactorAnalytics)
 
 The FactorAnalytics project is an open source package containing fitting and analysis methods for the three main types of factor models commonly used in conjunction with portfolio construction, optimization and risk management. These include:
 - fundamental factor models
