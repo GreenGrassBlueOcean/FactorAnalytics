@@ -122,33 +122,35 @@ fmCov.sfm <- function(object, use="pairwise.complete.obs", ...) {
 
 fmCov.ffm <- function(object, use="pairwise.complete.obs", ...) {
 
-  # already computed via fitFfm function
+  # get parameters from factor model
+  beta <- as.matrix(object$beta)
+  # convert NAs to 0 to enable matrix multiplication
+  beta[is.na(beta)] <- 0
+  sig2.e <- object$resid.var
 
-	# get parameters and factors from factor model
-	beta <- as.matrix(object$beta)
-	# convert NAs to 0 to enable matrix multiplication
-	beta[is.na(beta)] <- 0
-	sig2.e = object$resid.var
-	factor <- as.matrix(object$data[, object$factor.names])
-	factor.cov = object$factor.cov
-	# factor covariance matrix
-	if (is.null(factor.cov)) {
-		factor.cov = cov(factor, use=use, ...)
-	} else {
-		identical(dim(factor.cov), as.integer(c(ncol(factor), ncol(factor))))
-	}
+  factor.cov <- object$factor.cov
 
-	# residual covariance matrix D
-	if (length(sig2.e) > 1) {
-		D.e = diag(sig2.e)
-	} else {
-		D.e =  as.vector(sig2.e)
-	}
+  # Only extract factor returns if factor.cov was not pre-computed.
+  # Use estimated factor returns (not raw exposures from object$data),
+  # because factor.names contains level names for sector/industry models
+  # that do not correspond to columns in the input data frame.
+  if (is.null(factor.cov)) {
+    factor <- as.matrix(object$factor.returns)
+    factor.cov <- cov(factor, use = use, ...)
+  }
 
-	cov.fm = beta %*% factor.cov %*% t(beta) + D.e
+  # residual covariance matrix D
+  if (length(sig2.e) > 1) {
+    D.e <- diag(sig2.e)
+  } else {
+    D.e <- as.vector(sig2.e)
+  }
 
-	if (any(diag(chol(cov.fm))==0)) {
-		warning("Covariance matrix is not positive definite!")
-	}
+  cov.fm <- beta %*% factor.cov %*% t(beta) + D.e
 
-	return(cov.fm)}
+  if (any(diag(chol(cov.fm)) == 0)) {
+    warning("Covariance matrix is not positive definite!")
+  }
+
+  return(cov.fm)
+}

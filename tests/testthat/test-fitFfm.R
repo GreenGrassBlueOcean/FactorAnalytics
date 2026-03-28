@@ -87,12 +87,13 @@ test_that("fitFfm W-Rob reproduces fixture", {
     exposure.vars = c("SECTOR", "P2B"),
     fit.method = "W-Rob"
   )
-  expect_equal(fit$beta, fix$beta, tolerance = 1e-10)
-  expect_equal(as.matrix(fit$factor.returns), fix$factor.returns, tolerance = 1e-10)
-  expect_equal(as.matrix(fit$residuals), fix$residuals, tolerance = 1e-10)
-  expect_equal(fit$factor.cov, fix$factor.cov, tolerance = 1e-10)
-  expect_equal(fit$resid.var, fix$resid.var, tolerance = 1e-10)
-  expect_equal(fit$r2, fix$r2, tolerance = 1e-10)
+  # W-Rob uses IRLS; convergence varies across BLAS implementations
+  expect_equal(fit$beta, fix$beta, tolerance = 1e-4)
+  expect_equal(as.matrix(fit$factor.returns), fix$factor.returns, tolerance = 1e-4)
+  expect_equal(as.matrix(fit$residuals), fix$residuals, tolerance = 1e-4)
+  expect_equal(fit$factor.cov, fix$factor.cov, tolerance = 1e-4)
+  expect_equal(fit$resid.var, fix$resid.var, tolerance = 1e-4)
+  expect_equal(fit$r2, fix$r2, tolerance = 1e-4)
 })
 
 # --- Object structure invariants ---

@@ -40,18 +40,23 @@ architecture reference are in:
 
 ## Known Bugs (Discovered During Phase 0)
 
-### `fmCov()` fails on FFM fits with character exposures (sector models)
+### `fmCov()` fails on FFM fits with character exposures (sector models) — FIXED
 
-`fmCov.ffm()` does `object$data[, object$factor.names]`. For sector models,
+`fmCov.ffm()` did `object$data[, object$factor.names]`. For sector models,
 `factor.names` contains factor level names (e.g., `"COSTAP"`, `"ENERGY"`) rather than
-column names. This causes `"undefined columns selected"`. The bug affects all
-downstream consumers that call `fmCov` internally (risk decomposition, portfolio
-decomposition) when the FFM was fitted with sector exposures.
+column names. This caused `"undefined columns selected"`.
 
-**Workaround:** The covariance identity `beta %*% factor.cov %*% t(beta) + diag(resid.var)`
-can be computed directly from the `ffm` object slots without calling `fmCov()`.
-
-**Fix target:** Phase 3 (API Hardening).
+**Fix (applied):**
+- `R/fmCov.R`: Deferred factor extraction into the `if (is.null(factor.cov))` block
+  and switched from `object$data` to `object$factor.returns`.
+- `R/fitFfmDT.R`: Added missing `rownames(beta) <- asset.names` in the
+  `addIntercept = TRUE` + sector+style code path (line ~913). This was the root cause
+  of both wrong dimension names on `fmCov` output and `"subscript out of bounds"` in
+  `fmVaRDecomp.ffm` / `fmEsDecomp.ffm`.
+- The `.ffm` methods for `fmSdDecomp`, `fmVaRDecomp`, and `fmEsDecomp` already used
+  `object$factor.returns` correctly; no changes needed.
+- Updated `fixture_ffm_ls_sector.rds` to reflect corrected `rownames(beta)`.
+- Added regression tests in `test-fmCov.R` (2 tests) and `test-riskDecomp.R` (1 test).
 
 ### `fitTsfm()` excess return convention
 

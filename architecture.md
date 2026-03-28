@@ -244,7 +244,7 @@ Which slots each consumer reads from the fitted object:
 
 | Consumer | `$beta` | `$factor.returns` | `$residuals` | `$factor.cov` | `$resid.var` / `$resid.sd` | `$factor.fit` / `$asset.fit` | `$data` |
 |---|---|---|---|---|---|---|---|
-| `fmCov` | ✓ | | | ✓ | ✓ | | ✓ (tsfm only) ⚠️ BUG: fails on sector FFM |
+| `fmCov` | ✓ | | | ✓ | ✓ | | ✓ (tsfm only) |
 | `riskDecomp` | ✓ | ✓ (via data) | ✓ | ✓ (via cov) | ✓ | | ✓ |
 | `fmSdDecomp` | ✓ | | | ✓ (via cov) | ✓ | | ✓ |
 | `fmVaRDecomp` | ✓ | | ✓ | ✓ (via cov) | ✓ | | ✓ |
@@ -264,26 +264,29 @@ Which slots each consumer reads from the fitted object:
 and `predict.ffm` need the full `lm()` objects (`$factor.fit`). Everything else works
 from extracted numeric slots.
 
-### 4.3 `fmCov.ffm()` Bug — Sector Models
+### 4.3 `fmCov.ffm()` Bug — Sector Models (FIXED)
 
-**Bug:** `fmCov.ffm()` indexes `object$data[, object$factor.names]` to extract factor
-return columns. For FFM fits with character exposures (sector models), `factor.names`
-contains the factor *level* names (e.g., `"COSTAP"`, `"ENERGY"`, `"FINS"`) rather than
-the original column name (`"SECTOR"`). This causes `"undefined columns selected"`.
+**Bug (historical):** `fmCov.ffm()` indexed `object$data[, object$factor.names]` to
+extract factor return columns. For FFM fits with character exposures (sector models),
+`factor.names` contains the factor *level* names (e.g., `"COSTAP"`, `"ENERGY"`) rather
+than the original column name (`"SECTOR"`). This caused `"undefined columns selected"`.
 
-**Affected model types:** Any FFM with ≥1 character exposure (sector-only,
-sector+style, MSCI). Style-only FFMs (0 character exposures) are unaffected.
+A second, related bug: `fitFfmDT.R` did not set `rownames(beta) <- asset.names` in the
+`addIntercept = TRUE` + sector+style code path, causing `beta` to have numeric rownames
+("1", "2", ...) instead of ticker names. This broke downstream indexing in
+`fmVaRDecomp.ffm` and `fmEsDecomp.ffm` with `"subscript out of bounds"`.
 
-**Downstream impact:** All functions that call `fmCov()` internally will fail on sector
-models: `fmSdDecomp`, `fmVaRDecomp`, `fmEsDecomp`, `portSdDecomp`, `portVaRDecomp`,
-`portEsDecomp`, `riskDecomp`, `repRisk`.
-
-**Workaround:** Compute covariance directly from slots:
-```r
-cov_mat <- fit$beta %*% fit$factor.cov %*% t(fit$beta) + diag(fit$resid.var)
-```
-
-**Fix target:** Phase 3 (API Hardening).
+**Fix applied:**
+- `R/fmCov.R`: Deferred factor extraction into the `if (is.null(factor.cov))` block;
+  switched source from `object$data` to `object$factor.returns`; removed dead
+  `identical()` call.
+- `R/fitFfmDT.R`: Added `rownames(beta) <- asset.names` after the `cbind()` in the
+  intercept + sector+style branch.
+- The `.ffm` methods for `fmSdDecomp`, `fmVaRDecomp`, `fmEsDecomp` already used
+  `object$factor.returns` correctly — no changes needed.
+- `fixture_ffm_ls_sector.rds` regenerated with corrected rownames.
+- Regression tests added: `test-fmCov.R` (sector + sector-only), `test-riskDecomp.R`
+  (sector Sd/VaR/ES decomposition with summation invariant).
 
 ### 4.4 Monte Carlo Subsystem (Isolated)
 
@@ -581,7 +584,7 @@ scale (percentages), not 0–1 (proportions).
 
 These are properties that **must** hold after every phase:
 
-1. **Covariance identity:** `fit$beta %*% fit$factor.cov %*% t(fit$beta) + diag(fit$resid.var)` must produce the correct asset covariance matrix for all model types. For style-only FFMs, this must also equal `fmCov(fit)`. (Note: `fmCov.ffm()` currently has a bug on sector models — see Section 4.3.)
+1. **Covariance identity:** `fit$beta %*% fit$factor.cov %*% t(fit$beta) + diag(fit$resid.var)` must produce the correct asset covariance matrix for all model types. `fmCov(fit)` must produce the same result. Verified for style-only and sector models in `test-fmCov.R`.
 
 2. **Dimensional consistency:** `rownames(fit$beta)` == `names(fit$resid.var)` == `colnames(fit$residuals)`.
 

@@ -18,8 +18,10 @@ test_that("fitTsfm LS reproduces fixture", {
   expect_equal(as.data.frame(fit$beta), fix$beta, tolerance = 1e-10)
   expect_equal(fit$r2, fix$r2, tolerance = 1e-10)
   expect_equal(fit$resid.sd, fix$resid.sd, tolerance = 1e-10)
-  expect_equal(as.matrix(residuals(fit)), fix$residuals, tolerance = 1e-10)
-  expect_equal(as.matrix(fitted(fit)), fix$fitted, tolerance = 1e-10)
+  # as.Date.yearmon end-of-month convention differs across platforms (±1 day);
+  # compare values only, ignoring date rownames
+  expect_equal(unname(as.matrix(residuals(fit))), unname(fix$residuals), tolerance = 1e-10)
+  expect_equal(unname(as.matrix(fitted(fit))), unname(fix$fitted), tolerance = 1e-10)
   expect_equal(fit$asset.names, fix$asset.names)
   expect_equal(fit$factor.names, fix$factor.names)
 })

@@ -58,6 +58,32 @@ test_that("fmVaRDecomp percentage contributions sum to 100", {
                tolerance = 1e-10, ignore_attr = TRUE)
 })
 
+# --- Risk decomposition on sector models ---
+# These tests verify that fmSdDecomp, fmVaRDecomp, fmEsDecomp work on FFMs
+# fitted with character (categorical) exposures, which was historically broken
+# via fmCov's "undefined columns selected" error.
+test_that("Risk decomposition functions handle sector models correctly", {
+  fit_sector <- fitFfm(
+    data = factorDataSetDjia5Yrs,
+    asset.var = "TICKER", ret.var = "RETURN", date.var = "DATE",
+    exposure.vars = c("SECTOR", "P2B", "EV2S"),
+    addIntercept = TRUE
+  )
+  n_assets <- length(fit_sector$resid.var)
+
+  expect_no_error(sd_decomp <- fmSdDecomp(fit_sector))
+  expect_no_error(var_decomp <- fmVaRDecomp(fit_sector))
+  expect_no_error(es_decomp <- fmEsDecomp(fit_sector))
+
+  # Summation invariant (Architecture Reference Invariant 11.6)
+  expect_equal(unname(rowSums(sd_decomp$pcSd)),
+               rep(100, n_assets), tolerance = 1e-6)
+  expect_equal(unname(rowSums(var_decomp$pcVaR)),
+               rep(100, n_assets), tolerance = 1e-6)
+  expect_equal(unname(rowSums(es_decomp$pcES)),
+               rep(100, n_assets), tolerance = 1e-6)
+})
+
 # --- fmEsDecomp ---
 test_that("fmEsDecomp FFM reproduces fixture", {
   fix <- readRDS(test_path("fixtures", "fixture_fmEsDecomp_ffm.rds"))

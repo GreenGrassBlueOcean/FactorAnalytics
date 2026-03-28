@@ -61,6 +61,43 @@ test_that("covariance identity holds for FFM WLS (manual reconstruction)", {
   expect_equal(colnames(cov_manual), fix$colnames)
 })
 
+# --- fmCov on FFM with sector (categorical) exposures ---
+# Regression test for the bug where fmCov.ffm() crashed with
+# "undefined columns selected" on models with character exposures,
+# because factor.names contained factor level names (e.g. "COSTAP")
+# rather than column names in object$data.
+test_that("fmCov FFM sector model runs without error", {
+  fit_sector <- fitFfm(
+    data = factorDataSetDjia5Yrs,
+    asset.var = "TICKER", ret.var = "RETURN", date.var = "DATE",
+    exposure.vars = c("SECTOR", "P2B", "EV2S"),
+    addIntercept = TRUE
+  )
+  expect_no_error(cov_fm <- fmCov(fit_sector))
+
+  # Covariance identity (Architecture Reference Invariant 11.1)
+  beta <- as.matrix(fit_sector$beta)
+  beta[is.na(beta)] <- 0
+  expected_cov <- beta %*% fit_sector$factor.cov %*% t(beta) + diag(fit_sector$resid.var)
+  expect_equal(cov_fm, expected_cov, tolerance = 1e-8)
+
+  # Dimensionality invariant (Architecture Reference Invariant 11.2)
+  expect_equal(rownames(cov_fm), names(fit_sector$resid.var))
+  expect_equal(colnames(cov_fm), names(fit_sector$resid.var))
+})
+
+test_that("fmCov FFM sector-only model runs without error", {
+  fit_sector_only <- fitFfm(
+    data = factorDataSetDjia5Yrs,
+    asset.var = "TICKER", ret.var = "RETURN", date.var = "DATE",
+    exposure.vars = "SECTOR"
+  )
+  expect_no_error(cov_fm <- fmCov(fit_sector_only))
+  expect_equal(cov_fm, t(cov_fm), tolerance = 1e-14)
+  eigenvalues <- eigen(cov_fm, symmetric = TRUE, only.values = TRUE)$values
+  expect_true(all(eigenvalues >= -1e-10))
+})
+
 # --- Symmetry and positive semi-definiteness ---
 test_that("fmCov returns symmetric PSD matrix", {
   fit <- fitFfm(
