@@ -24,39 +24,34 @@ jobs:
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
       R_KEEP_PKG_SOURCE: yes
-
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_NOTIFICATIONS_BOT_TOKEN }}
 
     steps:
       - name: GHA Notify Slack - Build Starting
         id: slack
-        if: always()
-        env:
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_NOTIFICATIONS_BOT_TOKEN }}
+        if: env.SLACK_BOT_TOKEN != ''
         uses: justinr636/github-action-slack-notify-build@v1
         with:
           channel_id: C01MS7ECQ8Z
           status: STARTING
           color: warning
 
-
       - name: Check and Install Git LFS
         run: git lfs install
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Generate Git LFS File List
         run: git lfs ls-files -l | cut -d' ' -f1 | sort > .lfs-assets-id
       - name: Restore LFS Cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: .git/lfs
           key: ${{ runner.os }}-lfs-${{ hashFiles('.lfs-assets-id') }}-v1
       - name: Pull LFS Files
         run: git lfs pull
 
-
       - uses: r-lib/actions/setup-pandoc@v2
       - uses: r-lib/actions/setup-tinytex@v2
       - run: tlmgr --version
-
 
       - name: Install Ghostscript on Windows
         if: runner.os == 'Windows'
@@ -82,21 +77,17 @@ jobs:
           extra-packages: rcmdcheck
       - uses: r-lib/actions/check-r-package@v2
 
-
-      - name: GHA Slack Notify Build
-        if: success()
-        env:
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_NOTIFICATIONS_BOT_TOKEN }}
+      - name: GHA Slack Notify Build - Success
+        if: success() && env.SLACK_BOT_TOKEN != ''
         uses: justinr636/github-action-slack-notify-build@v1
         with:
           message_id: ${{ steps.slack.outputs.message_id }}
           channel_id: C01MS7ECQ8Z
           status: SUCCESS
           color: good
-      - name: GHA Slack Notify Build
-        if: failure()
-        env:
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_NOTIFICATIONS_BOT_TOKEN }}
+
+      - name: GHA Slack Notify Build - Failed
+        if: failure() && env.SLACK_BOT_TOKEN != ''
         uses: justinr636/github-action-slack-notify-build@v1
         with:
           message_id: ${{ steps.slack.outputs.message_id }}

@@ -594,3 +594,9 @@ These are properties that **must** hold after every phase:
 6. **Risk decomposition summation:** `rowSums(pcSd)`, `rowSums(pcVaR)`, and `rowSums(pcES)` must equal 100 (percentage scale) for all assets. Verified in `test-riskDecomp.R`.
 
 7. **TSFM excess return symmetry:** When `rf.name` is provided, `fitTsfm()` subtracts rf from both asset returns and factor returns. Manual cross-validation of betas must replicate this convention (see Section 3.3).
+
+## 12. CI / Notifications
+
+The CI workflow (`.github/workflows/slack-notify-build.yml`) runs R CMD check on 5 OS/R-version combinations. It inherited Slack notification steps from the upstream `braverock/FactorAnalytics` repo. These steps are guarded with `if: env.SLACK_BOT_TOKEN != ''` so they are silently skipped when the `SLACK_NOTIFICATIONS_BOT_TOKEN` secret is not configured.
+
+**Future:** Consider replacing the Slack integration with Mattermost using [GreenGrassBlueOcean/MattermostR](https://github.com/GreenGrassBlueOcean/MattermostR). This would align CI notifications with the organisation's own tooling rather than depending on the upstream's Slack workspace.
