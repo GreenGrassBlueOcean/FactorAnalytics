@@ -397,7 +397,7 @@ standardizeReturns <- function(specObj,
 
   alpha <- GARCH.params$alpha
   beta <- GARCH.params$beta
-  dataDT[, sdReturns := .(sd(get(r_), na.rm = TRUE)), by = a_]
+  dataDT[, sdReturns := list(sd(get(r_), na.rm = TRUE)), by = a_]
 
   # for each asset calculate squared returns
   dataDT[, ts := get(r_)^2]
@@ -1207,7 +1207,7 @@ calcAssetWeightsForRegression <- function(specObj,
   a_ <- eval(specObj$asset.var) # data table requires variable names to be evaluated
   d_ <- eval(specObj$date.var) # name of the date var
 
-  fitResults[, residuals := .(.(data.frame(date = get(d_)[[1]],
+  fitResults[, residuals := list(list(data.frame(date = get(d_)[[1]],
                                            id = fitResults$id[[1]],
                                            residuals = residuals(reg.list[[1]])))), by = d_]
   # extract the asset level residuals series and get time series variance or
@@ -1316,7 +1316,7 @@ calcAssetWeightsForRegression <- function(specObj,
 
     }
 
-    W = resid.DT[, .(W = 1/w), by = c("id", "date")] # id is the asset id
+    W = resid.DT[, list(W = 1/w), by = c("id", "date")] # id is the asset id
     data.table::setnames(W,old =  c("id","date"), c(a_, d_)) # we need the original name of the asset id
 
     # when the weighing scheme is not std deviation we need to merge bak by date and id
@@ -1325,7 +1325,7 @@ calcAssetWeightsForRegression <- function(specObj,
     data.table::setkeyv(SecondStepRegression, c(a_, d_))
 
   } else {
-    W = resid.DT[, .(W = 1/unique(resid.var)), by = id] # id is the asset id
+    W = resid.DT[, list(W = 1/unique(resid.var)), by = id] # id is the asset id
     data.table::setnames(W,old =  "id", a_) # we need the original name of the asset id
     data.table::setkeyv(W, a_) # so that we can merger it back with the regression data set and
     # run weighted regressions
@@ -1378,6 +1378,17 @@ convert.ffmSpec <- function(SpecObj, FitObj, RegStatsObj, ...) {
   ffmObj$exposure.vars <- SpecObj$exposure.vars
   ffmObj$exposures.num <- SpecObj$exposures.num
   ffmObj$exposures.char <- SpecObj$exposures.char
+  # Store ordered factor levels for each char exposure. Used by predict.ffm
+  # to reconstruct model.matrix dummy columns from user-supplied newdata.
+  if (length(SpecObj$exposures.char)) {
+    ffmObj$char_levels <- lapply(
+      SpecObj$exposures.char,
+      function(v) levels(SpecObj$dataDT[[v]])
+    )
+    names(ffmObj$char_levels) <- SpecObj$exposures.char
+  } else {
+    ffmObj$char_levels <- list()
+  }
   ffmObj$data <- data.table::copy(SpecObj$dataDT)
   data.table::setkeyv(ffmObj$data, c(SpecObj$date.var, SpecObj$asset.var))  # to match the order
   # expected in reporting functions

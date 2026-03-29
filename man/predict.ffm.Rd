@@ -9,10 +9,14 @@
 \arguments{
 \item{object}{an object of class \code{ffm} produced by \code{fitFfm}.}
 
-\item{newdata}{data.frame containing the variables \code{asset.var}, 
-\code{date.var} and the same exact \code{exposure.vars} used in the fitted
-\code{ffm} object. If omitted, the predictions are based on the data used 
-for the fit.}
+\item{newdata}{data.frame containing the same \code{exposure.vars} used in
+the fitted \code{ffm} object. For models with categorical exposures (sector
+or MSCI), \code{newdata} may contain either the original factor/character
+columns (e.g., \code{SECTOR}) or the pre-expanded model.matrix columns
+(\code{V1}, \code{V2}, ...). If original columns are supplied, they are
+automatically expanded using the restriction matrix and factor levels stored
+at fit time. If omitted, the predictions are based on the data used for the
+fit.}
 
 \item{pred.date}{character; unique date used to base the predictions. Should 
 be coercible to class \code{Date} and match one of the dates in the data used

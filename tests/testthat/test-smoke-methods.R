@@ -93,6 +93,176 @@ test_that("predict.tsfm works with default (NULL) newdata", {
   }
 })
 
+# ---------------------------------------------------------------------------
+# predict.ffm with newdata — walk-forward regression tests (Phase 3 prep)
+# Verifies stripped lm objects support predict(fit, newdata = ...) correctly.
+# ---------------------------------------------------------------------------
+
+test_that("predict.ffm with newdata works on style-only model", {
+  set.seed(8193)
+  n_pred <- 15
+  newdata <- data.frame(P2B = rnorm(n_pred), EV2S = rnorm(n_pred))
+
+  p <- predict(fit_ffm_style, newdata = newdata)
+  expect_true(is.matrix(p))
+  expect_equal(nrow(p), n_pred)
+  expect_equal(ncol(p), length(names(fit_ffm_style$factor.fit)))
+})
+
+test_that("predict.ffm with newdata + pred.date matches manual X %*% beta (style)", {
+  dates <- names(fit_ffm_style$factor.fit)
+  test_date <- dates[30]
+
+  set.seed(8193)
+  n_pred <- 15
+  newdata <- data.frame(P2B = rnorm(n_pred), EV2S = rnorm(n_pred))
+
+  pred <- predict(fit_ffm_style, newdata = newdata, pred.date = test_date)
+  expect_true(is.matrix(pred))
+  expect_equal(nrow(pred), n_pred)
+
+  beta <- coef(fit_ffm_style$factor.fit[[test_date]])
+  X <- as.matrix(newdata[, names(beta), drop = FALSE])
+  manual <- as.numeric(X %*% beta)
+
+  expect_equal(as.numeric(pred), manual, tolerance = 1e-12)
+})
+
+test_that("predict.ffm with newdata works on sector model (model.matrix columns)", {
+  # Sector models expand categoricals via model.matrix into V1, V2, ... columns.
+  # newdata must use those column names, not the original factor variable.
+  lm1 <- fit_ffm_sector$factor.fit[[1]]
+  coef_names <- names(coef(lm1))
+
+  set.seed(4271)
+  n_pred <- 10
+  newdata <- as.data.frame(
+    matrix(rnorm(n_pred * length(coef_names)), nrow = n_pred,
+           dimnames = list(NULL, coef_names))
+  )
+
+  p <- predict(fit_ffm_sector, newdata = newdata)
+  expect_true(is.matrix(p))
+  expect_equal(nrow(p), n_pred)
+})
+
+test_that("predict.ffm with newdata + pred.date matches manual X %*% beta (sector)", {
+  dates <- names(fit_ffm_sector$factor.fit)
+  test_date <- dates[30]
+
+  lm_date <- fit_ffm_sector$factor.fit[[test_date]]
+  beta <- coef(lm_date)
+  coef_names <- names(beta)
+
+  set.seed(4271)
+  n_pred <- 10
+  newdata <- as.data.frame(
+    matrix(rnorm(n_pred * length(coef_names)), nrow = n_pred,
+           dimnames = list(NULL, coef_names))
+  )
+
+  pred <- predict(fit_ffm_sector, newdata = newdata, pred.date = test_date)
+  expect_true(is.matrix(pred))
+  expect_equal(nrow(pred), n_pred)
+
+  # No intercept in sector model — direct multiplication
+  X <- as.matrix(newdata[, coef_names, drop = FALSE])
+  manual <- as.numeric(X %*% beta)
+
+  expect_equal(as.numeric(pred), manual, tolerance = 1e-12)
+})
+
+# ---------------------------------------------------------------------------
+# Phase 3.0 — char_levels slot + auto-expansion for sector models
+# ---------------------------------------------------------------------------
+
+test_that("ffm object stores char_levels for sector model", {
+  expect_true(!is.null(fit_ffm_sector$char_levels))
+  expect_named(fit_ffm_sector$char_levels, "SECTOR")
+  expect_identical(
+    fit_ffm_sector$char_levels[["SECTOR"]],
+    levels(factor(fit_ffm_sector$data$SECTOR))
+  )
+})
+
+test_that("ffm object has empty char_levels for style-only model", {
+  expect_identical(fit_ffm_style$char_levels, list())
+})
+
+test_that("predict.ffm with original SECTOR column works (sector model)", {
+  dates <- names(fit_ffm_sector$factor.fit)
+  test_date <- dates[30]
+
+  set.seed(5017)
+  n_pred <- 10
+  sectors <- fit_ffm_sector$char_levels[["SECTOR"]]
+  newdata <- data.frame(
+    SECTOR = sample(sectors, n_pred, replace = TRUE),
+    P2B = rnorm(n_pred)
+  )
+
+  pred <- predict(fit_ffm_sector, newdata = newdata, pred.date = test_date)
+  expect_true(is.matrix(pred))
+  expect_equal(nrow(pred), n_pred)
+
+  # Cross-validate: manually expand and predict
+  expanded <- FactorAnalytics:::expand_newdata_ffm(fit_ffm_sector, newdata)
+  manual <- predict(fit_ffm_sector$factor.fit[[test_date]], newdata = expanded)
+  expect_equal(as.numeric(pred), as.numeric(manual), tolerance = 1e-12)
+})
+
+test_that("predict.ffm still works with pre-expanded V1..Vk newdata (sector)", {
+  lm1 <- fit_ffm_sector$factor.fit[[1]]
+  coef_names <- names(coef(lm1))
+  set.seed(4271)
+  n_pred <- 10
+  newdata <- as.data.frame(
+    matrix(rnorm(n_pred * length(coef_names)), nrow = n_pred,
+           dimnames = list(NULL, coef_names))
+  )
+  expect_no_error(predict(fit_ffm_sector, newdata = newdata))
+})
+
+test_that("predict.ffm errors on unknown sector level", {
+  newdata <- data.frame(SECTOR = "NONEXISTENT", P2B = 0.5)
+  expect_error(
+    predict(fit_ffm_sector, newdata = newdata),
+    "unknown levels"
+  )
+})
+
+test_that("predict.ffm errors when newdata is missing numeric exposure", {
+  newdata <- data.frame(SECTOR = "COSTAP")
+  expect_error(
+    predict(fit_ffm_sector, newdata = newdata),
+    "missing numeric exposure"
+  )
+})
+
+test_that("predict.ffm handles NA in numeric exposure without row-dropping", {
+  sectors <- fit_ffm_sector$char_levels[["SECTOR"]]
+  newdata <- data.frame(
+    SECTOR = sectors[1:3],
+    P2B = c(1.5, NA, -0.3)
+  )
+  pred <- predict(fit_ffm_sector, newdata = newdata,
+                  pred.date = names(fit_ffm_sector$factor.fit)[1])
+  expect_equal(nrow(pred), 3L)
+  expect_true(is.na(pred[2, 1]))
+})
+
+test_that("predict.ffm works when newdata has only a subset of sectors", {
+  sectors <- fit_ffm_sector$char_levels[["SECTOR"]]
+  newdata <- data.frame(
+    SECTOR = sectors[1:2],
+    P2B = c(1.0, 2.0)
+  )
+  pred <- predict(fit_ffm_sector, newdata = newdata,
+                  pred.date = names(fit_ffm_sector$factor.fit)[1])
+  expect_true(is.matrix(pred))
+  expect_equal(nrow(pred), 2L)
+})
+
 test_that("print.ffm runs without error", {
   expect_no_error(capture.output(print(fit_ffm_style)))
   expect_no_error(capture.output(print(fit_ffm_sector)))

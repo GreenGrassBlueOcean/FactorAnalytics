@@ -137,6 +137,10 @@ time period. Each fitted object is of class \code{lm} if
 \item{return.cov}{N x N return covariance estimated by the factor model,
 using the factor exposures from the last time period.}
 \item{restriction.mat}{The restriction matrix used in the computation of f=Rg.}
+\item{char_levels}{Named list of ordered factor levels for each categorical
+exposure variable, as used during \code{model.matrix} expansion at fit time.
+Used by \code{predict.ffm} to reconstruct dummy columns from user-supplied
+\code{newdata}. Empty list for style-only models (no categorical exposures).}
 \item{resid.var}{N x T matrix of estimated residual variances. It will be a length-N vector of sample residual variances when \code{resid.scaleType} is set to \code{stdDev} }
 \item{call}{the matched function call.}
 \item{data}{data frame object as input.}
