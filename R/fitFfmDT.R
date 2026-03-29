@@ -797,7 +797,6 @@ extractRegressionStats <- function(specObj, fitResults, full.resid.cov=FALSE){
 
   a_ <- eval(specObj$asset.var) # data table requires variable names to be evaluated
   d_ <- eval(specObj$date.var) # name of the date var
-  asset.names <- unique(specObj$data[[specObj$asset.var]])
   reg.listDT <- data.table::copy(fitResults$reg.listDT)
   betasDT <- data.table::copy(fitResults$betasDT)
   resid.scaleType <- fitResults$resid.scaleType # we send this because what we do in the
@@ -818,8 +817,12 @@ extractRegressionStats <- function(specObj, fitResults, full.resid.cov=FALSE){
   # we have a problem here in case of a jagged matrix
   residuals1 <- data.table::rbindlist(l = reg.listDT$residuals, use.names = F)
   data.table::setnames(residuals1, c("date", "id", "residuals") )
-  # find the residuals for the assets that exist as of last period
+  # Assets in the final cross-section determine beta dimensions and
+
+  # residual column filtering. For unbalanced panels, this excludes
+  # delisted assets that exited before the last period.
   a_last <- reg.listDT[get(d_) == max(get(d_)),]$id[[1]]
+  asset.names <- a_last
   # this is needed so that the matrices conform
   residuals1 <- residuals1[ id %in% a_last]
   residuals1 <- data.table::dcast(data = residuals1, formula = date ~ id,

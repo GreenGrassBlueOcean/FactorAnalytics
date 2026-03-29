@@ -4,6 +4,7 @@
 #' Either plot all assets or choose a single asset to plot.
 #' 
 #' @importFrom zoo index
+#' @importFrom stats setNames
 #' 
 #' @param x object of class \code{"pafm"} created by
 #' \code{paFm}.
@@ -47,6 +48,14 @@ plot.pafm <- function(x, which.plot=c("none","1L","2L","3L"),max.show=6,
                       date=NULL,plot.single=FALSE,fundName,
                       which.plot.single=c("none","1L","2L","3L"),...) {
   
+  # Normalize cum.spec.ret to a named vector (TSFM returns a data.frame,
+  # FFM returns a named vector)
+  if (is.data.frame(x$cum.spec.ret) || is.matrix(x$cum.spec.ret)) {
+    spec_ret <- setNames(x$cum.spec.ret[, 1], rownames(x$cum.spec.ret))
+  } else {
+    spec_ret <- x$cum.spec.ret
+  }
+
   # ... for  chart.TimeSeries
   if (is.null(date)){
     date = zoo::index(x[[3]][[1]])[1]
@@ -65,9 +74,9 @@ plot.pafm <- function(x, which.plot=c("none","1L","2L","3L"),max.show=6,
                                 \nMake a plot selection (or 0 to exit):\n")
     switch(which.plot.single,
            "1L" = {  
-             bar <- c(x$cum.spec.ret[fundName],x$cum.ret.attr.f[fundName,])
-             names(bar)[1] <- "specific.returns"
-             barplot(bar, horiz=TRUE, main="cumulative attributed returns", 
+             bar <- c(specific.returns = spec_ret[fundName],
+                      unlist(x$cum.ret.attr.f[fundName,]))
+             barplot(bar, horiz=TRUE, main="cumulative attributed returns",
                      las=1)
            },
            "2L" ={
@@ -106,8 +115,8 @@ plot.pafm <- function(x, which.plot=c("none","1L","2L","3L"),max.show=6,
            "1L" = {
              par(mfrow=c(2,n/2))
              for (i in fundnames[1:n]) {
-               bar <- c(x$cum.spec.ret[i], x$cum.ret.attr.f[i,])
-               names(bar)[1] <- "specific.returns"
+               bar <- c(specific.returns = spec_ret[i],
+                        unlist(x$cum.ret.attr.f[i,]))
                barplot(bar, horiz=TRUE, main=i, las=1)  
              }
              par(mfrow=c(1,1))

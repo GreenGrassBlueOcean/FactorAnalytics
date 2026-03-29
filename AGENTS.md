@@ -17,7 +17,8 @@ architecture reference are in:
 | **Phase 0.5 — Smoke Tests** | ✅ Complete | 91 smoke assertions in `test-smoke-methods.R`. 254 total tests, 0 failures. Coverage: 23.4% → 46.4% (2,095 / 4,512 lines). |
 | **Phase 1 — Dependency Pruning** | ✅ Complete | Imports 18 → 6; 3 packages removed (`RCurl`, `doSNOW`, `foreach`); 12 moved to Suggests. 5 pre-existing bugs fixed. R CMD check clean. |
 | **Phase 2 — Performance** | ✅ Complete | 5 for-loops vectorized; `lm` objects stripped; R² extraction deduped; Robust EWMA bug fixed. 269 tests, 0 failures. Commit `3988d65`. |
-| **Phase 3 — API Hardening** | 🔲 Not started | Unbalanced panel tests pass. `fmCov` dimensionality verified. ||
+| **Phase 3 — API Hardening** | 🔲 Not started | Unbalanced panel tests pass. `fmCov` dimensionality verified. |
+| **Phase 4 — Testing & Bug Fixes** | 🔄 In progress | Unbalanced panel bug fixed. fmCov invariants. Coverage expansion. 7 pre-existing bugs fixed. ||
 
 ## Test Infrastructure
 
@@ -27,7 +28,7 @@ architecture reference are in:
   **unmodified** v2.4.2 upstream code by `tests/testthat/helpers/generate_fixtures.R`;
   4 added in Phase 2 for vectorized EWMA/GARCH intermediate results.
   Each fixture stores only numeric components (no full `lm`/`ffm` objects).
-- **Test files:** 10 files in `tests/testthat/`:
+- **Test files:** 18 files in `tests/testthat/`:
   - `test-fitFfm.R` — 5 FFM model branches + structure/dimension invariants
   - `test-fitTsfm.R` — 3 TSFM paths + manual `lm()` cross-validation
   - `test-fmCov.R` — Covariance matrices + identity verification
@@ -38,8 +39,16 @@ architecture reference are in:
   - `test-input-validation.R` — Error handling, weight validation
   - `test-smoke-methods.R` — 91 smoke tests for S3 methods, plots, reporting (Phase 0.5)
   - `test-vectorize.R` — 15 assertions: EWMA/GARCH vectorization, Robust EWMA, stripped `lm` (Phase 2)
-- **Total:** 269 assertions across 10 test files, 0 failures.
-- **Coverage:** 46.4% (2,095 / 4,512 lines). Baseline established on commit `4b58a6e`.
+  - `test-unbalanced-panel.R` — 26 assertions: synthetic unbalanced panel (Phase 4.1)
+  - `test-fmCov-invariants.R` — ~60 assertions: 6 invariants × 8 model configs (Phase 4.2)
+  - `test-CornishFisher.R` — 8 assertions: CF expansion mathematical properties (Phase 4.3)
+  - `test-portVolDecomp.R` — 11 assertions: portfolio volatility decomposition (Phase 4.3)
+  - `test-vif.R` — 3 assertions: variance inflation factors (Phase 4.3)
+  - `test-paFm.R` — 20 assertions: performance attribution TSFM + FFM + plots (Phase 4.3)
+  - `test-fitTsfmUpDn.R` — 12 assertions: up/down market timing model (Phase 4.3)
+  - `test-roll-fitFfmDT.R` — 2 assertions: rolling-window FFM smoke test (Phase 4.3)
+- **Total:** ~400 assertions across 18 test files, 0 failures, 0 skips.
+- **Coverage:** 46.4% baseline (commit `4b58a6e`); target 55–60% after Phase 4.
 - **Tolerances:** Coefficients/factor returns `1e-10`, covariance `1e-8`, risk decomp `1e-6`.
 - **Setup:** `tests/testthat/setup.R` loads all bundled datasets and prepares the
   `dat145` subset used across multiple test files.
@@ -78,6 +87,42 @@ returned `NULL`, making all Robust EWMA weights `NA`.
 
 **Fix:** Changed `resid.DT$var` → `resid.DT$resid.var` in the Robust EWMA path of
 `calcAssetWeightsForRegression()`.
+
+### `paFm.ffm()` broken slot names and blind intercept drop — FIXED (Phase 4)
+
+`paFm.ffm()` used legacy slot names (`fit$assetvar`, `fit$returnsvar`,
+`fit$exposure.names`) that don't exist on the current `fitFfm` object. It also did
+`fit$factor.returns[, -1]` assuming the first column is always an intercept; for
+style-only models (no intercept column) this silently dropped the first real factor.
+
+**Root causes:**
+- `fit$assetvar` → should be `fit$asset.var`
+- `fit$returnsvar` → should be `fit$ret.var`
+- `fit$exposure.names` → should be `fit$exposure.vars`
+- `factor.returns[, -1]` → conditional: only drop if `"(Intercept)"` column exists
+- Industry factor detection used positional indexing (`[-(1:n)]`), which assumed numeric
+  factors come first in `colnames(beta)`. They actually come last.
+
+**Fix (applied to `R/paFm.r`):**
+- Conditional intercept drop: only removes `"(Intercept)"` column by name.
+- Corrected all slot references to current API.
+- Replaced positional industry factor indexing with name-based: `setdiff(factor.names, num.f.names)`.
+- Hoisted `num.f.names` and `has.industry` out of the per-asset loop (invariant).
+- Added `exposure[, factor.names, drop = FALSE]` reordering to ensure column alignment
+  with `factor.returns` before element-wise multiplication.
+
+### `plot.pafm()` column-select on `cum.spec.ret` data.frame — FIXED (Phase 4)
+
+`plot.pafm()` indexed `x$cum.spec.ret[i]` where `i` is an asset name like `"HAM1"`.
+Since `cum.spec.ret` is a 1-column data.frame (from TSFM) or a named vector (from FFM),
+`[i]` performed column-select on the data.frame case, failing with "undefined columns
+selected".
+
+**Fix (applied to `R/plot.pafm.r`):**
+- Added type normalization at function entry: converts `cum.spec.ret` to a named numeric
+  vector regardless of input type (data.frame or vector).
+- Also wrapped `cum.ret.attr.f[i,]` in `unlist()` to prevent `c()` producing a list
+  when concatenating a scalar with a data.frame row.
 
 ## Performance Optimisations (Phase 2)
 

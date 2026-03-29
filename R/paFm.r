@@ -110,46 +110,52 @@ paFm <- function(fit, ...) {
   }
 
   if (is(fit)=="ffm" ) {
-    # if benchmark is provided
-    #       if (!is.null(benchmark)) {
-    #         stop("use fitFundamentalFactorModel instead")
-    #       }
-    # return attributed to factors
-    factor.returns <- fit$factor.returns[, -1]
-    factor.names <- colnames(fit$beta)
+
+    # Drop intercept column from factor returns only if present
+    if ("(Intercept)" %in% colnames(fit$factor.returns)) {
+      factor.returns <- fit$factor.returns[, colnames(fit$factor.returns) != "(Intercept)"]
+    } else {
+      factor.returns <- fit$factor.returns
+    }
+    factor.names <- colnames(factor.returns)
     date <- zoo::index(factor.returns)
     ticker <- fit$asset.names
 
-    #cumulative return attributed to factors
-    if (factor.names[1] == "(Intercept)") {
-      # discard intercept
-      cum.attr.ret <- matrix(, nrow=length(ticker), ncol=length(factor.names),
-                             dimnames=list(ticker, factor.names))[, -1]
-    } else {
-      cum.attr.ret <- matrix(, nrow=length(ticker), ncol=length(factor.names),
-                             dimnames=list(ticker, factor.names))
-    }
+    # Cumulative return attributed to factors
+    cum.attr.ret <- matrix(, nrow=length(ticker), ncol=length(factor.names),
+                           dimnames=list(ticker, factor.names))
     cum.spec.ret <- rep(0, length(ticker))
     names(cum.spec.ret) <- ticker
 
-    # make list of every asstes and every list contains return attributed to
-    # factors and specific returns
     attr.list <- list()
 
-    for (k in ticker) {
-      idx <- which(fit$data[, fit$assetvar]== k)
-      returns <- fit$data[idx, fit$returnsvar]
-      num.f.names <- intersect(fit$exposure.names, factor.names)
+    # Numeric exposure names that are also factor names (time-varying exposures)
+    num.f.names <- intersect(fit$exposure.vars, factor.names)
+    # Detect industry/sector variables: exposure.vars entries not in factor.names
+    # (e.g., "SECTOR" is an exposure var but "COSTAP", "ENERGY" are the factor names)
+    has.industry <- length(setdiff(fit$exposure.vars, factor.names)) > 0
 
-      # check if there is industry factors
-      if (length(setdiff(fit$exposure.names, factor.names)) > 0) {
-        ind.f <- matrix(rep(fit$beta[k, ][-(1:length(num.f.names))],
-                            length(idx)), nrow=length(idx), byrow=TRUE)
-        colnames(ind.f) <- colnames(fit$beta)[-(1:length(num.f.names))]
-        exposure <- cbind(fit$data[idx, num.f.names], ind.f)
+    for (k in ticker) {
+      idx <- which(fit$data[[fit$asset.var]] == k)
+      returns <- fit$data[idx, fit$ret.var]
+
+      if (has.industry) {
+        # Industry/sector factor names = factor names that are NOT numeric exposures
+        ind.f.names <- setdiff(factor.names, num.f.names)
+        ind.f <- matrix(rep(fit$beta[k, ind.f.names], length(idx)),
+                        nrow=length(idx), byrow=TRUE)
+        colnames(ind.f) <- ind.f.names
+        if (length(num.f.names) > 0) {
+          exposure <- cbind(fit$data[idx, num.f.names, drop = FALSE], ind.f)
+        } else {
+          exposure <- as.data.frame(ind.f)
+        }
       } else {
-        exposure <- fit$data[idx, num.f.names]
+        exposure <- fit$data[idx, num.f.names, drop = FALSE]
       }
+
+      # Ensure column order matches factor.returns
+      exposure <- exposure[, factor.names, drop = FALSE]
 
       attr.factor <- exposure * coredata(factor.returns)
       specific.returns <- returns - apply(attr.factor, 1, sum)
