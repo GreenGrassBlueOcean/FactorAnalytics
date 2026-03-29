@@ -1,3 +1,24 @@
+# Strip heavy payload from lm/lmrob objects to reduce memory footprint.
+# Preserves: coefficients, residuals, fitted.values, qr, rank, df.residual,
+#   assign, terms, xlevels (needed by summary, vcov, predict, fitted).
+# Strips: model frame, design matrix, response vector, captured call/scope.
+strip_lm <- function(fit) {
+  # Keep $model — predict.lm needs it when newdata = NULL to reconstruct
+  # the model frame via model.frame.lm(). Stripping it breaks predict(fit).
+  fit$x <- NULL
+  fit$y <- NULL
+  # Neuter call: preserve function name but strip captured data arguments.
+  # For namespaced calls (e.g., RobStatTM::lmrobdetMM), deparse gives
+  # "RobStatTM::lmrobdetMM" as a single string suitable for call().
+  fn_name <- tryCatch(deparse(fit$call[[1L]]), error = function(e) "lm")
+  fit$call <- call(fn_name)
+  attr(fit$terms, ".Environment") <- baseenv()
+  if (!is.null(fit$formula)) {
+    environment(fit$formula) <- baseenv()
+  }
+  fit
+}
+
 #' @title Specifies the elements of a fundamental factor model
 #'
 #' @description Factor models have a few parameters that describe how the
@@ -186,8 +207,7 @@ standardizeExposures <- function(specObj,
                                  lambda = 0.9){
 
   # Due to NSE notes related to data.table in R CMD check
-  w = s = NULL
-  # See data.table "Importing data.table" vignette
+  w <- s <- ts <- NULL
 
 
   weight.var <- specObj$weight.var
@@ -200,7 +220,8 @@ standardizeExposures <- function(specObj,
   Std.Type <- match.arg(arg = Std.Type, choices = toupper(c("NONE", "CROSSSECTION", "TIMESERIES")),
                         several.ok = F )
 
-  d_ <- eval(specObj$date.var) # name of the date var
+  a_ <- specObj$asset.var
+  d_ <- specObj$date.var
   # Convert numeric exposures to z-scores
   if (!grepl(Std.Type, "NONE")) {
     if (!is.null(weight.var)) {
@@ -236,11 +257,21 @@ standardizeExposures <- function(specObj,
 # for each asset compute the difference between its exposure at time t - 1 and
 # the Xsection mean of exposures and square it
         dataDT[, ts := (get(e_) - mean(get(e_), na.rm = TRUE))^2, by = d_]
-        for ( i in 1:NROW(dataDT))
-          set(dataDT,i, "s", ifelse(dataDT$idx[i] <= 1,
-                                    dataDT$ts[i],
-                                    (1 - lambda) * dataDT$ts[i] + lambda * dataDT$s[i - 1] ))
-        # ???? # need timeSeries mean?
+        data.table::setorderv(dataDT, c(a_, d_))
+        dataDT[, s := {
+          n <- .N
+          if (n == 1L) {
+            ts[1L]
+          } else {
+            c(ts[1L],
+              as.numeric(stats::filter(
+                x = (1 - lambda) * ts[-1L],
+                filter = lambda,
+                method = "recursive",
+                init = ts[1L]
+              )))
+          }
+        }, by = a_]
         dataDT[, eval(e_) := (get(e_) - mean(get(e_), na.rm = TRUE))/sqrt(s), by = d_]
       }
       dataDT[, ts := NULL]
@@ -355,12 +386,13 @@ standardizeReturns <- function(specObj,
                                                    beta = 0.81)) {
 
   # Due to NSE notes related to data.table in R CMD check
-  sdReturns = . = sigmaGarch = StandardizedReturns = NULL
+  sdReturns <- sigmaGarch <- StandardizedReturns <- ts <- NULL
   # See data.table "Importing data.table" vignette
 
   dataDT <- data.table::copy(specObj$dataDT) # hard_copy
-  a_ <- eval(specObj$asset.var) # name of the asset column or id
-  r_ <- specObj$yVar # name of the variable column for returns.. sometimes get sometimes eval
+  a_ <- specObj$asset.var
+  d_ <- specObj$date.var
+  r_ <- specObj$yVar
   # we need this variable to be created.. in case returns are not standardized
 
   alpha <- GARCH.params$alpha
@@ -370,12 +402,23 @@ standardizeReturns <- function(specObj,
   # for each asset calculate squared returns
   dataDT[, ts := get(r_)^2]
 
-  for ( i in 1: NROW(dataDT))
-    set(dataDT,i, "sigmaGarch",
-        ifelse(dataDT$idx[i] == 1,
-               (1 - alpha - beta) * dataDT$sdReturns[i]^2 +  alpha * dataDT$ts[i],
-               (1 - alpha - beta) * dataDT$sdReturns[i]^2 + alpha * dataDT$ts[i] +
-                 beta * dataDT$sigmaGarch[i-1]))
+  data.table::setorderv(dataDT, c(a_, d_))
+  dataDT[, sigmaGarch := {
+    omega_i <- (1 - alpha - beta) * sdReturns[1L]^2
+    x <- omega_i + alpha * ts
+    n <- .N
+    if (n == 1L) {
+      x[1L]
+    } else {
+      c(x[1L],
+        as.numeric(stats::filter(
+          x = x[-1L],
+          filter = beta,
+          method = "recursive",
+          init = x[1L]
+        )))
+    }
+  }, by = a_]
 
 
   dataDT[, sigmaGarch := sqrt(sigmaGarch)]
@@ -646,18 +689,24 @@ fitFfmDT <- function(ffMSpecObj,
   # returns a list of the fitted lm or lmrobdetMM objects for each time period
   if (grepl("LS",fit.method)) {
 
-    reg.listDT <- betasDT[which(!idxNA), .(id = .(toRegress[[1]][[a_]]),
-                                           reg.list = .(lm(formula = fm.formula, data = toRegress[[1]],
-                                                           na.action=na.omit))), by = d_]
+    reg.listDT <- betasDT[which(!idxNA), list(id = list(toRegress[[1]][[a_]]),
+                                           reg.list = list({
+                                             fit <- lm(formula = fm.formula, data = toRegress[[1]],
+                                                        na.action = na.omit)
+                                             strip_lm(fit)
+                                           })), by = d_]
 
   }else if (grepl("ROB",fit.method)) {
 
 
-    reg.listDT <- betasDT[which(!idxNA), .(id = .(toRegress[[1]][[a_]]),
-                                           reg.list = .(RobStatTM::lmrobdetMM(formula = fm.formula,
+    reg.listDT <- betasDT[which(!idxNA), list(id = list(toRegress[[1]][[a_]]),
+                                           reg.list = list({
+                                             fit <- RobStatTM::lmrobdetMM(formula = fm.formula,
                                                                    data = toRegress[[1]],
                                                                    na.action = na.omit,
-                                                                   control =  lmrobdet.control.para.list))), by = d_]
+                                                                   control = lmrobdet.control.para.list)
+                                             strip_lm(fit)
+                                           })), by = d_]
   }
   # second pass weighted regressions ----
   if (grepl("W",fit.method)) {
@@ -674,7 +723,10 @@ fitFfmDT <- function(ffMSpecObj,
     # w$W <- 1/w$W
     if (fit.method=="WLS") {
       reg.listDT <- SecondStepRegression[ complete.cases(SecondStepRegression[,ffMSpecObj$exposure.vars, with = F]) ,
-                                          .(reg.list = .(lm(formula = fm.formula, data = .SD, weights = W, na.action = na.omit)))
+                                          list(reg.list = list({
+                                            fit <- lm(formula = fm.formula, data = .SD, weights = W, na.action = na.omit)
+                                            strip_lm(fit)
+                                          }))
                                           , by = d_]
 
     } else if (fit.method=="W-Rob") {
@@ -682,12 +734,15 @@ fitFfmDT <- function(ffMSpecObj,
 
       reg.listDT <-
         SecondStepRegression[ complete.cases(SecondStepRegression[,ffMSpecObj$exposure.vars, with = F]) ,
-                              .(reg.list = .(RobStatTM::lmrobdetMM(
-                                formula = fm.formula,
-                                data = .SD,
-                                weights = W,
-                                na.action = na.omit,
-                                control =  lmrobdet.control.para.list)))
+                              list(reg.list = list({
+                                fit <- RobStatTM::lmrobdetMM(
+                                  formula = fm.formula,
+                                  data = .SD,
+                                  weights = W,
+                                  na.action = na.omit,
+                                  control = lmrobdet.control.para.list)
+                                strip_lm(fit)
+                              }))
                               , by = d_]
 
     }
@@ -1139,7 +1194,7 @@ calcAssetWeightsForRegression <- function(specObj,
                                           GARCH.MLE = FALSE) {
 
   # Due to NSE notes related to data.table in R CMD check
-  . = reg.list = id = idx = resid.var = w = NULL
+  reg.list <- id <- idx <- resid.var <- residuals <- w <- NULL
   # See data.table "Importing data.table" vignette
 
   resid.scaleType = toupper(resid.scaleType[1])
@@ -1177,19 +1232,44 @@ calcAssetWeightsForRegression <- function(specObj,
     if(resid.scaleType == "EWMA"){
 
       #Use sample variance as the initial variance
-      for ( i in 1:NROW(resid.DT))
-        set(resid.DT,i, "w", ifelse(resid.DT$idx[i] == 1,
-                                    resid.DT$resid.var[i],
-                                    (1 - lambda) * resid.DT$residuals[i]^2 + lambda * resid.DT$w[i - 1]))
+      data.table::setorderv(resid.DT, c("id", "date"))
+      resid.DT[, w := {
+        sq <- residuals^2
+        init <- resid.var[1L]
+        n <- .N
+        if (n == 1L) {
+          init
+        } else {
+          c(init,
+            as.numeric(stats::filter(
+              x = (1 - lambda) * sq[-1L],
+              filter = lambda,
+              method = "recursive",
+              init = init
+            )))
+        }
+      }, by = id]
     } else if (resid.scaleType == "ROBUSTEWMA"){
-      #Use sample variance as the initial variance
-      for ( i in 1:NROW(resid.DT))
-        #ifelse conditon is used to check if robust EWMA weights has to be calculated.
-        #The rejection threshold a=2.5 is used as mentioned in eq 6.6 of Martin (2005)
-        set(resid.DT,i, "w", ifelse(resid.DT$idx[i] == 1, resid.DT$var[i],
-                                    ifelse(abs(resid.DT$residuals[i]) <= 2.5*sqrt(resid.DT$w[i-1]),
-                                           lambda * resid.DT$w[i - 1] + (1 - lambda) * resid.DT$residuals[i]^2,
-                                           resid.DT$w[i - 1])))
+      # Robust EWMA: rejection threshold a=2.5 per Martin (2005) eq 6.6.
+      # Bug fix: original code referenced resid.DT$var (non-existent column);
+      # correct column is resid.var.
+      data.table::setorderv(resid.DT, c("id", "date"))
+      resid.DT[, w := {
+        init <- resid.var[1L]
+        eps2 <- residuals^2
+        n <- .N
+        if (n == 1L) {
+          init
+        } else {
+          Reduce(function(w_prev, t) {
+            if (abs(residuals[t]) <= 2.5 * sqrt(w_prev)) {
+              lambda * w_prev + (1 - lambda) * eps2[t]
+            } else {
+              w_prev
+            }
+          }, x = 2L:n, init = init, accumulate = TRUE)
+        }
+      }, by = id]
 
     } else if(resid.scaleType == "GARCH") {
 
@@ -1211,11 +1291,24 @@ calcAssetWeightsForRegression <- function(specObj,
         alpha = GARCH.params$alpha
         beta =  GARCH.params$beta
         #Use sample variance as the initial variance
-        for ( i in 1:NROW(resid.DT))
-          set(resid.DT,i, "w", ifelse(resid.DT$idx[i] == 1,
-                                      resid.DT$resid.var[i],
-                                      (1 - alpha - beta)*resid.DT$resid.var[i] +
-                                        alpha * resid.DT$residuals[i-1]^2 + beta * resid.DT$w[i - 1]))
+        data.table::setorderv(resid.DT, c("id", "date"))
+        resid.DT[, w := {
+          omega_i <- (1 - alpha - beta) * resid.var[1L]
+          sq_lag <- data.table::shift(residuals^2, n = 1L, fill = resid.var[1L])
+          x <- omega_i + alpha * sq_lag
+          n <- .N
+          if (n == 1L) {
+            resid.var[1L]
+          } else {
+            c(resid.var[1L],
+              as.numeric(stats::filter(
+                x = x[-1L],
+                filter = beta,
+                method = "recursive",
+                init = resid.var[1L]
+              )))
+          }
+        }, by = id]
 
 
 
@@ -1267,12 +1360,11 @@ convert.ffmSpec <- function(SpecObj, FitObj, RegStatsObj, ...) {
   reg.list = NULL
   # See data.table "Importing data.table" vignette
 
-  asset.names <- names(RegStatsObj$residuals) # unique(SpecObj$dataDT[[SpecObj$asset.var]])
+  asset.names <- names(RegStatsObj$residuals)
   time.periods <- unique(SpecObj$dataDT[[SpecObj$date.var]])
-  temp <- FitObj$reg.listDT[ , summary(reg.list[[1]])$r.squared,
-                             by  = eval(SpecObj$date.var)]
-  r2 <- temp$V1
-  names(r2) <- temp[[SpecObj$date.var]]
+  # R² already extracted in extractRegressionStats — reuse instead of
+  # re-calling summary() on every lm object (Phase 2 dedup).
+  r2 <- RegStatsObj$r2
   factor.names <- RegStatsObj$factor.names
 
   ffmObj <- list()
