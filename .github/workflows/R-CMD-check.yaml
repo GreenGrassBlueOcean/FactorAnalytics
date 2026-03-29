@@ -29,8 +29,6 @@ jobs:
           needs: check
 
       - uses: r-lib/actions/check-r-package@v2
-        with:
-          args: '"--no-manual", "--as-cran"'
 
   # ── Full matrix: runs on pushes to main only ──
   check-full:
@@ -68,5 +66,3 @@ jobs:
           needs: check
 
       - uses: r-lib/actions/check-r-package@v2
-        with:
-          args: '"--no-manual", "--as-cran"'
