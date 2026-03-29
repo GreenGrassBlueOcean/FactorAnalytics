@@ -2,7 +2,7 @@
 
 > Reference document for the GreenGrassBlueOcean refactoring effort.
 > Generated from `braverock/FactorAnalytics` v2.4.2 (2024-12-12).
-> Updated 2026-03-29 with Phase 0, 0.5, 1 (Dependency Pruning), and 2 (Performance) findings.
+> Updated 2026-03-29 with Phase 0, 0.5, 1 (Dependency Pruning), 2 (Performance), and 4 (Testing & Bug Fixes) findings.
 
 ---
 
@@ -255,7 +255,7 @@ Which slots each consumer reads from the fitted object:
 | `summary.ffm` | | | | | | ✓ `summary()` | |
 | `fitted.ffm` | | | | | | ✓ `fitted()` | |
 | `predict.ffm` | | | | | | ✓ `predict()` | |
-| `paFm` | ✓ | ✓ | ✓ | | | | |
+| `paFm` | ✓ | ✓ | | | | | ✓ (ffm: `$asset.var`, `$ret.var`, `$exposure.vars`) |
 | `repReturn` | ✓ | ✓ | ✓ | | | | ✓ |
 | `repExposures` | ✓ | | | | | | ✓ |
 | `repRisk` | ✓ | ✓ | ✓ | ✓ | ✓ | | ✓ |
@@ -342,7 +342,40 @@ during the Phase 1 `requireNamespace()` guard work.
    `stop()`. **Fix:** Replaced with `requireNamespace()` guards for both `lmtest` and
    `sandwich`, with informative `stop()` messages.
 
-### 4.6 Monte Carlo Subsystem (Isolated)
+### 4.6 Bugs Fixed During Phase 4 (Testing & Bug Fixes)
+
+1. **`extractRegressionStats()` unbalanced panel dimension mismatch** (line ~800):
+   `asset.names` was set to `unique(specObj$data[[specObj$asset.var]])` — all assets
+   ever in the dataset — but `residuals` was filtered to `a_last` (last-period assets
+   only). On unbalanced panels (e.g., STOXX 1800 with delistings), `beta` had more rows
+   than `residuals` columns, breaking downstream covariance calculations.
+   **Fix:** Set `asset.names <- a_last` after line 821 so `rownames(beta)` matches
+   the last-period asset set. Balanced panels are unaffected (all assets present in
+   every period).
+
+2. **`paFm.ffm()` broken slot names and blind intercept drop** (R/paFm.r):
+   Used legacy slot names (`fit$assetvar`, `fit$returnsvar`, `fit$exposure.names`) that
+   don't exist on the current `fitFfm` object. Also did `fit$factor.returns[, -1]`
+   assuming the first column is always an intercept; for style-only models this dropped
+   the first real factor.
+   **Root causes and fix:**
+   - `fit$assetvar` → `fit$asset.var`; `fit$returnsvar` → `fit$ret.var`;
+     `fit$exposure.names` → `fit$exposure.vars`
+   - Conditional intercept drop: only remove `"(Intercept)"` column by name
+   - Replaced positional industry factor indexing (`[-(1:n)]`) with name-based:
+     `setdiff(factor.names, num.f.names)`
+   - Added `exposure[, factor.names, drop = FALSE]` reordering to ensure column
+     alignment before element-wise multiplication
+   - Hoisted loop-invariant computations out of per-asset loop
+
+3. **`plot.pafm()` column-select on `cum.spec.ret` data.frame** (R/plot.pafm.r):
+   `x$cum.spec.ret[i]` where `i` is an asset name performed column-select (data.frame)
+   instead of row-select. Also, `c(scalar, data.frame_row)` produced a list instead of
+   a numeric vector.
+   **Fix:** Type normalization at function entry converts `cum.spec.ret` to a named
+   numeric vector; `unlist()` on `cum.ret.attr.f[i,]` before concatenation.
+
+### 4.7 Monte Carlo Subsystem (Isolated)
 
 ```
 fmmc()                  [R/fmmc.R]
@@ -671,7 +704,15 @@ scale (percentages), not 0–1 (proportions).
 | `test-input-validation.R` | 5 | Error handling, weight validation | Behavioural |
 | `test-smoke-methods.R` | 23 | S3 methods, plots, reporting | Smoke (run-and-check) |
 | `test-vectorize.R` | 7 | EWMA/GARCH vectorization, Robust EWMA, stripped `lm` | Fixture-backed + behavioural (Phase 2) |
-| **Total** | **67** | | **269 assertions** |
+| `test-unbalanced-panel.R` | 8 | Synthetic unbalanced panel: delist/entry assets | Behavioural (Phase 4) |
+| `test-fmCov-invariants.R` | 13 | 6 invariants × 8 model configs (symmetry, PSD, dims) | Structural (Phase 4) |
+| `test-CornishFisher.R` | 8 | CF expansion mathematical properties | Behavioural (Phase 4) |
+| `test-portVolDecomp.R` | 5 | Portfolio volatility decomposition (TSFM + FFM) | Behavioural (Phase 4) |
+| `test-vif.R` | 3 | Variance inflation factors | Behavioural (Phase 4) |
+| `test-paFm.R` | 8 | Performance attribution: TSFM + 3 FFM types + plots | Behavioural (Phase 4) |
+| `test-fitTsfmUpDn.R` | 4 | Up/down market timing model | Behavioural (Phase 4) |
+| `test-roll-fitFfmDT.R` | 1 | Rolling-window FFM smoke test | Smoke (Phase 4) |
+| **Total** | **117** | | **438 assertions** |
 
 **Conditional skips (added Phase 1):** Three test blocks skip when optional packages
 are absent:
@@ -755,6 +796,7 @@ These are properties that **must** hold after every phase:
 | **1 — Dependency Pruning** | ✅ Complete | Imports 18 → 6; 3 packages removed; 12 to Suggests | 254 tests pass; 5 pre-existing bugs fixed |
 | **2 — Performance** | ✅ Complete | Vectorize 5 for loops; strip lm() objects; dedup R² | 269 assertions; 4 new fixtures; Robust EWMA bug fixed. Commit `3988d65`. |
 | **3 — API Hardening** | 🔲 Not started | Unbalanced panels; fmCov dimensionality; PA integration | — |
+| **4 — Testing & Bug Fixes** | 🔄 In progress | Unbalanced panel fix; fmCov invariants; coverage expansion; paFm/plot.pafm fixes | 438 assertions; 8 new test files; 3 pre-existing bugs fixed. Commit `7039a0a`. |
 
 ---
 

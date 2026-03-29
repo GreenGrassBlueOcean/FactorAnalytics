@@ -18,7 +18,7 @@ architecture reference are in:
 | **Phase 1 — Dependency Pruning** | ✅ Complete | Imports 18 → 6; 3 packages removed (`RCurl`, `doSNOW`, `foreach`); 12 moved to Suggests. 5 pre-existing bugs fixed. R CMD check clean. |
 | **Phase 2 — Performance** | ✅ Complete | 5 for-loops vectorized; `lm` objects stripped; R² extraction deduped; Robust EWMA bug fixed. 269 tests, 0 failures. Commit `3988d65`. |
 | **Phase 3 — API Hardening** | 🔲 Not started | Unbalanced panel tests pass. `fmCov` dimensionality verified. |
-| **Phase 4 — Testing & Bug Fixes** | 🔄 In progress | Unbalanced panel bug fixed. fmCov invariants. Coverage expansion. 7 pre-existing bugs fixed. ||
+| **Phase 4 — Testing & Bug Fixes** | 🔄 In progress | Unbalanced panel bug fixed. fmCov invariants. Coverage expansion. 8 pre-existing bugs fixed. 438 assertions across 18 test files, 0 failures, 0 skips. Commit `7039a0a`. ||
 
 ## Test Infrastructure
 
@@ -47,13 +47,13 @@ architecture reference are in:
   - `test-paFm.R` — 20 assertions: performance attribution TSFM + FFM + plots (Phase 4.3)
   - `test-fitTsfmUpDn.R` — 12 assertions: up/down market timing model (Phase 4.3)
   - `test-roll-fitFfmDT.R` — 2 assertions: rolling-window FFM smoke test (Phase 4.3)
-- **Total:** ~400 assertions across 18 test files, 0 failures, 0 skips.
+- **Total:** 438 assertions across 18 test files, 0 failures, 0 skips.
 - **Coverage:** 46.4% baseline (commit `4b58a6e`); target 55–60% after Phase 4.
 - **Tolerances:** Coefficients/factor returns `1e-10`, covariance `1e-8`, risk decomp `1e-6`.
 - **Setup:** `tests/testthat/setup.R` loads all bundled datasets and prepares the
   `dat145` subset used across multiple test files.
 
-## Known Bugs (Discovered During Phase 0)
+## Known Bugs (Discovered & Fixed)
 
 ### `fmCov()` fails on FFM fits with character exposures (sector models) — FIXED
 
@@ -78,6 +78,17 @@ column names. This caused `"undefined columns selected"`.
 `fitTsfm()` subtracts `rf` from **both** asset returns **and** factor returns before
 fitting. This is important for cross-validation: manual `lm()` replication must also
 subtract rf from both the response and the regressors.
+
+### `extractRegressionStats()` unbalanced panel dimension mismatch — FIXED (Phase 4)
+
+`extractRegressionStats()` set `asset.names <- unique(specObj$data[[specObj$asset.var]])`
+(ALL unique assets ever in the dataset), but later filtered residuals to `a_last`
+(last-period assets only). On unbalanced panels with delistings, `beta` had more rows
+than `residuals` columns, breaking downstream `fmCov` and risk decomposition.
+
+**Fix:** Deleted the early `asset.names` assignment. After `a_last` is computed (line
+~821), set `asset.names <- a_last`. All three `rownames(beta) <- asset.names` calls
+now use the last-period asset set. Balanced panels are unaffected.
 
 ### `calcAssetWeightsForRegression` Robust EWMA used wrong column — FIXED (Phase 2)
 
