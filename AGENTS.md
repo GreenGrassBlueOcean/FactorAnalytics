@@ -15,18 +15,19 @@ architecture reference are in:
 |---|---|---|
 | **Phase 0 — Foundation** | ✅ Complete | 0 errors, 0 warnings, 0 notes in R CMD check. 22 fixtures, 8 test files, all passing. |
 | **Phase 0.5 — Smoke Tests** | ✅ Complete | 91 smoke assertions in `test-smoke-methods.R`. 254 total tests, 0 failures. Coverage: 23.4% → 46.4% (2,095 / 4,512 lines). |
-| **Phase 1 — Dependency Pruning** | 🔲 Not started | R CMD check clean. All Phase 0–0.5 tests pass. Package installs with hard imports only. |
-| **Phase 2 — Performance** | 🔲 Not started | All fixtures match within tolerance. Performance benchmarked. |
+| **Phase 1 — Dependency Pruning** | ✅ Complete | Imports 18 → 6; 3 packages removed (`RCurl`, `doSNOW`, `foreach`); 12 moved to Suggests. 5 pre-existing bugs fixed. R CMD check clean. |
+| **Phase 2 — Performance** | ✅ Complete | 5 for-loops vectorized; `lm` objects stripped; R² extraction deduped; Robust EWMA bug fixed. 269 tests, 0 failures. Commit `3988d65`. |
 | **Phase 3 — API Hardening** | 🔲 Not started | Unbalanced panel tests pass. `fmCov` dimensionality verified. ||
 
 ## Test Infrastructure
 
 - **Framework:** `testthat` 3.0+ (Edition 3). Configured in `DESCRIPTION` and
   `tests/testthat.R`.
-- **Fixtures:** 22 `.rds` files in `tests/testthat/fixtures/`. Generated from the
-  **unmodified** v2.4.2 upstream code by `tests/testthat/helpers/generate_fixtures.R`.
+- **Fixtures:** 26 `.rds` files in `tests/testthat/fixtures/`. 22 generated from
+  **unmodified** v2.4.2 upstream code by `tests/testthat/helpers/generate_fixtures.R`;
+  4 added in Phase 2 for vectorized EWMA/GARCH intermediate results.
   Each fixture stores only numeric components (no full `lm`/`ffm` objects).
-- **Test files:** 9 files in `tests/testthat/`:
+- **Test files:** 10 files in `tests/testthat/`:
   - `test-fitFfm.R` — 5 FFM model branches + structure/dimension invariants
   - `test-fitTsfm.R` — 3 TSFM paths + manual `lm()` cross-validation
   - `test-fmCov.R` — Covariance matrices + identity verification
@@ -36,6 +37,8 @@ architecture reference are in:
   - `test-fmTstats.R` — T-statistics computation
   - `test-input-validation.R` — Error handling, weight validation
   - `test-smoke-methods.R` — 91 smoke tests for S3 methods, plots, reporting (Phase 0.5)
+  - `test-vectorize.R` — 15 assertions: EWMA/GARCH vectorization, Robust EWMA, stripped `lm` (Phase 2)
+- **Total:** 269 assertions across 10 test files, 0 failures.
 - **Coverage:** 46.4% (2,095 / 4,512 lines). Baseline established on commit `4b58a6e`.
 - **Tolerances:** Coefficients/factor returns `1e-10`, covariance `1e-8`, risk decomp `1e-6`.
 - **Setup:** `tests/testthat/setup.R` loads all bundled datasets and prepares the
@@ -66,6 +69,43 @@ column names. This caused `"undefined columns selected"`.
 `fitTsfm()` subtracts `rf` from **both** asset returns **and** factor returns before
 fitting. This is important for cross-validation: manual `lm()` replication must also
 subtract rf from both the response and the regressors.
+
+### `calcAssetWeightsForRegression` Robust EWMA used wrong column — FIXED (Phase 2)
+
+The Robust EWMA branch referenced `resid.DT$var` (non-existent column) instead of
+`resid.DT$resid.var`. Since `data.table` `$` does not partial-match, the expression
+returned `NULL`, making all Robust EWMA weights `NA`.
+
+**Fix:** Changed `resid.DT$var` → `resid.DT$resid.var` in the Robust EWMA path of
+`calcAssetWeightsForRegression()`.
+
+## Performance Optimisations (Phase 2)
+
+### `strip_lm()` — Memory-safe lm object storage
+
+`fitFfmDT()` stores one `lm()` object per cross-section date. Each `lm` silently
+captures the formula environment (pointer to the parent `data.table`), `$x`, `$y`, and
+other heavy slots. At STOXX 1800 scale this creates ~120 hidden copies of the panel.
+
+`strip_lm()` (defined in `fitFfmDT.R`) neutering after each fit:
+- Sets `$call` to `call("lm")` (prevents refitting)
+- Severs `.Environment` via `baseenv()` (breaks reference to parent data)
+- Removes `$x` and `$y`
+- Keeps `$model` (required by `predict.lm()` without `newdata`)
+
+Applied at all 4 regression call sites (LS, ROB, WLS, W-Rob).
+
+### Vectorized EWMA/GARCH recursions
+
+All 5 row-by-row `set()` for-loops in `fitFfmDT.R` replaced:
+- Loops #1–3, #5 → `stats::filter(method = "recursive")` (C-level)
+- Loop #4 (Robust EWMA) → `Reduce(accumulate = TRUE)` (conditional recursion
+  incompatible with `stats::filter`)
+
+### R² extraction dedup
+
+`convert.ffmSpec()` now reads `RegStatsObj$r2` directly instead of re-calling
+`summary()` on every stored `lm` object.
 
 ## R Package Standards
 

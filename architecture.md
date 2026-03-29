@@ -2,7 +2,7 @@
 
 > Reference document for the GreenGrassBlueOcean refactoring effort.
 > Generated from `braverock/FactorAnalytics` v2.4.2 (2024-12-12).
-> Updated 2026-03-28 with Phase 0, 0.5, and 1 (Dependency Pruning) findings.
+> Updated 2026-03-29 with Phase 0, 0.5, 1 (Dependency Pruning), and 2 (Performance) findings.
 
 ---
 
@@ -43,7 +43,7 @@ fitFfm()                                    [R/fitFfm.R, line 218]
   ├─► standardizeExposures()                [R/fitFfmDT.R, line 182]
   │     Z-scores numeric exposures. Two paths:
   │     • CrossSection: grouped by date, standard z-score
-  │     • TimeSeries: EWMA variance per asset (ROW-BY-ROW FOR LOOP ⚠️)
+  │     • TimeSeries: EWMA variance per asset (vectorized via stats::filter)
   │
   ├─► fitFfmDT()                            [R/fitFfmDT.R, line 447]
   │     Core cross-sectional regression engine:
@@ -81,7 +81,7 @@ ffm
 ├── $return.cov        N × N matrix       Full return covariance (B·Σf·B' + D)
 ├── $g.cov             matrix or NULL      g-coefficient covariance (intercept models)
 ├── $restriction.mat   matrix or NULL      Restriction matrix R (intercept models)
-├── $factor.fit        list (T)            Full lm() objects per date ⚠️ MEMORY
+├── $factor.fit        list (T)            Stripped lm() objects per date (Phase 2: env severed, $x/$y removed)
 ├── $factor.names      character (K)       Factor names
 ├── $asset.names       character (N)       Asset names
 ├── $time.periods      Date (T)            Unique dates
@@ -452,37 +452,55 @@ All call sites use `requireNamespace("pkg", quietly = TRUE)` with an informative
 
 ---
 
-## 7. Performance Bottlenecks
+## 7. Performance Bottlenecks (Post–Phase 2)
 
-### 7.1 Row-by-Row `for` Loops (5 instances, all in `fitFfmDT.R`)
+### 7.1 Row-by-Row `for` Loops — ✅ RESOLVED (Phase 2)
 
-All follow the same recursive variance pattern: `σ²[t] = α·x[t] + β·σ²[t-1]`
+All 5 row-by-row `set()` for-loops in `fitFfmDT.R` followed the recursive variance
+pattern `σ²[t] = α·x[t] + β·σ²[t-1]` and have been replaced:
 
-| Location | Function | Line | Purpose |
+| Loop | Function | Replacement | Notes |
 |---|---|---|---|
-| 1 | `standardizeExposures` | 239 | TimeSeries z-score EWMA |
-| 2 | `standardizeReturns` | 373 | GARCH(1,1) return standardization |
-| 3 | `calcAssetWeightsForRegression` | 1159 | EWMA residual variance for WLS |
-| 4 | `calcAssetWeightsForRegression` | 1165 | Robust EWMA residual variance |
-| 5 | `calcAssetWeightsForRegression` | 1189 | GARCH residual variance for WLS |
+| 1 | `standardizeExposures` (EWMA) | `stats::filter(method = "recursive")` | C-level |
+| 2 | `standardizeReturns` (GARCH) | `stats::filter(method = "recursive")` | C-level |
+| 3 | `calcAssetWeightsForRegression` (EWMA) | `stats::filter(method = "recursive")` | C-level |
+| 4 | `calcAssetWeightsForRegression` (Robust EWMA) | `Reduce(accumulate = TRUE)` | Conditional recursion; can't use `stats::filter` |
+| 5 | `calcAssetWeightsForRegression` (GARCH) | `stats::filter(method = "recursive")` | C-level |
 
-### 7.2 `lm()` Object Accumulation
+4 intermediate fixtures verify vectorized output matches the original for-loop results
+within `1e-12` tolerance.
 
-`fitFfmDT()` stores full `lm()` objects per date in `reg.listDT$reg.list`. Each `lm`
-silently captures `$model` (data frame copy), `$qr` (QR decomposition), and the formula
-environment (pointer to parent data.table). At STOXX 1800 scale (~120 dates × ~1800
-assets), this creates ~120 hidden copies of the panel.
+**Bug fixed during vectorization:** Loop #4 (Robust EWMA) referenced
+`resid.DT$var` (non-existent column) instead of `resid.DT$resid.var`. Since
+`data.table` `$` does not partial-match, all Robust EWMA weights were `NA`.
 
-**Consumers that require `lm` objects:** `fmTstats` (vcov), `fmRsq` (summary),
-`summary.ffm`, `fitted.ffm`, `predict.ffm`.
+### 7.2 `lm()` Object Accumulation — ✅ RESOLVED (Phase 2)
 
-**Consumers that only need extracted numerics:** everything else.
+`fitFfmDT()` stores `lm()` objects per date in `reg.listDT$reg.list`. Previously each
+`lm` silently captured `$model`, `$qr`, and the formula environment (pointer to parent
+data.table). At STOXX 1800 scale this created ~120 hidden copies of the panel.
 
-### 7.3 `xts` Conversion Churn
+**Fix:** `strip_lm()` helper applied at all 4 regression call sites (LS, ROB, WLS,
+W-Rob):
+- Neuters `$call` → `call("lm")`
+- Severs `.Environment` → `baseenv()`
+- Removes `$x`, `$y`
+- Retains `$model` (required by `predict.lm()` without `newdata`)
+
+Regression test in `test-vectorize.R` verifies `coef()`, `residuals()`, `fitted()`,
+`summary()`, `vcov()`, and `predict()` all work on stripped objects.
+
+### 7.3 R² Extraction Dedup — ✅ RESOLVED (Phase 2)
+
+`convert.ffmSpec()` previously re-called `summary()` on every stored `lm` object to
+extract R². Now reads `RegStatsObj$r2` directly (already computed in
+`extractRegressionStats()`).
+
+### 7.4 `xts` Conversion Churn (Remaining)
 
 `extractRegressionStats()` converts intermediate data.table results to xts 6–10 times
 (residuals, factor returns, weights, g-coefficients, IC). `convert.ffmSpec()` then
-converts the data *back* to data.frame (line 1267).
+converts the data *back* to data.frame (line 1267). This is a Phase 3 candidate.
 
 ---
 
@@ -579,8 +597,9 @@ All tracked via Git LFS.
 
 ### 9.2 Test Fixtures
 
-22 gold-standard `.rds` fixtures in `tests/testthat/fixtures/`, generated from
-unmodified v2.4.2 code. Each stores only numeric slots (no `lm` objects).
+26 `.rds` fixtures in `tests/testthat/fixtures/`. 22 gold-standard fixtures generated
+from unmodified v2.4.2 code; 4 added in Phase 2 for vectorized EWMA/GARCH intermediate
+results. Each stores only numeric slots (no `lm` objects).
 
 | Fixture | Model / Function | Key slots |
 |---|---|---|
@@ -606,6 +625,10 @@ unmodified v2.4.2 code. Each stores only numeric slots (no `lm` objects).
 | `fixture_portEsDecomp_ffm` | `portEsDecomp()` on style-only FFM (p=0.9, normal) | ES.fm, mES, cES, pcES |
 | `fixture_fmRsq` | `fmRsq()` on WLS FFM | rsq + rsqAdj |
 | `fixture_fmTstats` | `fmTstats()` on WLS FFM | tstats + pvalues |
+| `fixture_standardize_ewma` | EWMA z-score (Loop #1) on DJIA | Per-exposure variance series |
+| `fixture_standardize_garch` | GARCH(1,1) standardization (Loop #2) on DJIA | sigmaGarch column |
+| `fixture_weights_ewma` | EWMA WLS weights (Loop #3) | id, date, residuals, resid.var, w |
+| `fixture_weights_garch` | GARCH WLS weights (Loop #5) | id, date, residuals, resid.var, w |
 
 **Note on risk decomposition percentages:** `pcSd`, `pcVaR`, `pcES` are on the 0–100
 scale (percentages), not 0–1 (proportions).
@@ -647,7 +670,8 @@ scale (percentages), not 0–1 (proportions).
 | `test-fmTstats.R` | 2 | T-statistics computation | Fixture-backed |
 | `test-input-validation.R` | 5 | Error handling, weight validation | Behavioural |
 | `test-smoke-methods.R` | 23 | S3 methods, plots, reporting | Smoke (run-and-check) |
-| **Total** | **60** | | **254 assertions** |
+| `test-vectorize.R` | 7 | EWMA/GARCH vectorization, Robust EWMA, stripped `lm` | Fixture-backed + behavioural (Phase 2) |
+| **Total** | **67** | | **269 assertions** |
 
 **Conditional skips (added Phase 1):** Three test blocks skip when optional packages
 are absent:
@@ -729,7 +753,7 @@ These are properties that **must** hold after every phase:
 | **0 — Foundation** | ✅ Complete | testthat migration, 22 fixtures, CI/CD | 163 assertions; 0 errors, 0 warnings |
 | **0.5 — Smoke Tests** | ✅ Complete | 91 smoke tests for S3 methods | 254 total assertions; coverage 23.4% → 46.4% |
 | **1 — Dependency Pruning** | ✅ Complete | Imports 18 → 6; 3 packages removed; 12 to Suggests | 254 tests pass; 5 pre-existing bugs fixed |
-| **2 — Performance** | 🔲 Not started | Vectorize 5 for loops; strip lm() objects | — |
+| **2 — Performance** | ✅ Complete | Vectorize 5 for loops; strip lm() objects; dedup R² | 269 assertions; 4 new fixtures; Robust EWMA bug fixed. Commit `3988d65`. |
 | **3 — API Hardening** | 🔲 Not started | Unbalanced panels; fmCov dimensionality; PA integration | — |
 
 ---
