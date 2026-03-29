@@ -77,6 +77,15 @@ specFfm <- function(data, asset.var, ret.var, date.var, exposure.vars,
     stop("Invalid args: ret.var cannot also be an exposure")
   }
 
+  # Verify all referenced columns exist in data
+  all_vars <- c(asset.var, date.var, ret.var, exposure.vars)
+  if (!is.null(weight.var)) all_vars <- c(all_vars, weight.var)
+  missing_cols <- setdiff(all_vars, colnames(data))
+  if (length(missing_cols) > 0L) {
+    stop("Invalid args: column(s) not found in data: ",
+         paste(missing_cols, collapse = ", "), call. = FALSE)
+  }
+
   if (!is.null(weight.var) && !is.character(weight.var)) {
     stop("Invalid args: weight.var must be a character string")
   }
@@ -993,38 +1002,76 @@ extractRegressionStats <- function(specObj, fitResults, full.resid.cov=FALSE){
     # return covariance estimated by the factor model
 
   } else {
-    # msci
+    # msci — model with 2+ character exposures (e.g. Sector + Country)
     lvl <- unlist(sapply(specObj$dataDT[, .SD, .SDcols = specObj$exposures.char], levels))
 
-    factor.names <- c("Market", specObj$exposures.num, paste(lvl,sep=""))
+    factor.names <- c("Market", specObj$exposures.num, paste(lvl, sep = ""))
 
     g <- reg.listDT[, .(g = .(coefficients(reg.list[[1]]))), by = d_]
     data.table::setkeyv(g, d_)
     #factor returns = restriction matrix * g coefficients
-    factor.returns <- betasDT[, c(d_ ,"R_matrix"), with = F][g]
+    factor.returns <- betasDT[, c(d_, "R_matrix"), with = FALSE][g]
 
     g <- g[, .(.(data.frame(date = get(d_)[[1]], t(g[[1]])))), by = d_]
     g <- data.table::rbindlist(g$V1)
     g <- data.table::as.xts.data.table(g)
     g.cov <- cov(g)
-    K <- length(factor.names) - length(specObj$exposures.char)
 
+    # K_cat = number of transformed categorical coefficients = ncol(R_matrix)
+    # R_matrix is (K1+K2+1) x (K1+K2-1); only these first K_cat coefficients
+    # should be multiplied by R_matrix. Style coefficients come after.
+    K_cat <- betasDT[1, ]$K1[[1]] + betasDT[1, ]$K2[[1]] - 1L
 
-    factor.returns <- factor.returns[, .(factor.returns1 = .(R_matrix[[1]] %*% g[[1]][1:K])), by = d_]
-    factor.returns[, factor.returns := .(.(matrix(c(factor.returns1[[1]]), nrow = 1,
-                                                  dimnames = list(date = eval(d_)[[1]],
-                                                                  factors = factor.names)))), by = d_]
+    if (length(specObj$exposures.num) > 0) {
+      # Separate categorical and style coefficients before R_matrix multiplication
+      factor.returns <- factor.returns[, list(
+        factor.returns1 = list(R_matrix[[1]] %*% g[[1]][1:K_cat]),
+        factor.returns2 = list(g[[1]][(K_cat + 1):length(g[[1]])])
+      ), by = d_]
 
+      # Reorder to match factor.names: Market, style, categorical_levels
+      factor.returns[, factor.returns := list(list(matrix(
+        c(factor.returns1[[1]][1],
+          factor.returns2[[1]],
+          factor.returns1[[1]][-1]),
+        nrow = 1,
+        dimnames = list(date = eval(d_)[[1]], factors = factor.names)
+      ))), by = d_]
+    } else {
+      factor.returns <- factor.returns[, list(
+        factor.returns1 = list(R_matrix[[1]] %*% g[[1]][1:K_cat])
+      ), by = d_]
+      factor.returns[, factor.returns := list(list(matrix(
+        c(factor.returns1[[1]]), nrow = 1,
+        dimnames = list(date = eval(d_)[[1]], factors = factor.names)
+      ))), by = d_]
+    }
 
-    factor.returns[ , factor.returns := .(.(data.frame(date = get(d_)[[1]], factor.returns[[1]]))), by = d_]
+    factor.returns[, factor.returns := list(list(
+      data.frame(date = get(d_)[[1]], factor.returns[[1]])
+    )), by = d_]
     factor.returns <- data.table::rbindlist(factor.returns$factor.returns)
     factor.returns <- data.table::as.xts.data.table(factor.returns)
 
+    restriction.mat <- betasDT[get(d_) == max(get(d_)), R_matrix[[1]]]
 
     #Exposure matrix for the last time period
-    beta <- as.matrix(betasDT[ get(d_) == max(get(d_)), beta.mic[[1]]])
+    beta <- as.matrix(betasDT[get(d_) == max(get(d_)), beta.mic[[1]]])
     rownames(beta) <- asset.names
-    beta.stms = as.matrix(betasDT[ get(d_) == max(get(d_)), beta.mic[[1]] ])
+
+    if (length(specObj$exposures.num) > 0) {
+      # Include style exposures in beta, ordered: Market, style, categorical
+      B.style <- as.matrix(
+        specObj$dataDT[get(d_) == max(get(d_)), .SD, .SDcols = specObj$exposures.num]
+      )
+      rownames(B.style) <- asset.names
+      beta <- cbind(beta[, 1, drop = FALSE], B.style, beta[, -1, drop = FALSE])
+    }
+
+    beta.stms <- as.matrix(betasDT[get(d_) == max(get(d_)), B.mod[[1]]])
+    if (length(specObj$exposures.num) > 0) {
+      beta.stms <- cbind(beta.stms, B.style)
+    }
   }
 
   # factor covariances ----

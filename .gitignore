@@ -8,3 +8,5 @@
 *\.Rproj
 /.settings/
 .positai
+*.Rcheck/
+nul

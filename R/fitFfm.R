@@ -240,36 +240,18 @@ fitFfm <- function(data, asset.var, ret.var, date.var, exposure.vars,
   this.call <- match.call()
 
   # set defaults and check input validity
-  if (missing(data) || !is.data.frame(data)) {
-    stop("Invalid args: data must be a data.frame")
-  }
+  #
+  # Basic parameter checks (data, asset.var, date.var, ret.var, exposure.vars,
+
+  # weight.var, rob.stats) are performed in specFfm() — not duplicated here.
+  # fitFfm() validates only the parameters it owns that specFfm() does not receive.
+
   if (!(asset.var %in% colnames(data)) || length(unique(data[[asset.var]])) < 2) {
     stop("Invalid args: data must contain at least 2 assets in asset.var")
   }
   fit.method = fit.method[1]
   if (!(fit.method %in% c("LS","WLS","Rob","W-Rob"))) {
     stop("Invalid args: fit.method must be 'LS', 'WLS', 'Rob' or 'W-Rob'")
-  }
-  if (missing(asset.var) || !is.character(asset.var)) {
-    stop("Invalid args: asset.var must be a character string")
-  }
-  if (missing(date.var) || !is.character(date.var)) {
-    stop("Invalid args: date.var must be a character string")
-  }
-  if (missing(ret.var) || !is.character(ret.var)) {
-    stop("Invalid args: ret.var must be a character string")
-  }
-  if (missing(exposure.vars) || !is.character(exposure.vars)) {
-    stop("Invalid args: exposure.vars must be a character vector")
-  }
-  if (ret.var %in% exposure.vars) {
-    stop("Invalid args: ret.var can not also be an exposure")
-  }
-  if (!is.null(weight.var) && !is.character(weight.var)) {
-    stop("Invalid args: weight.var must be a character string")
-  }
-  if (!is.logical(rob.stats) || length(rob.stats) != 1) {
-    stop("Invalid args: control parameter 'rob.stats' must be logical")
   }
   if (!is.logical(full.resid.cov) || length(full.resid.cov) != 1) {
     stop("Invalid args: control parameter 'full.resid.cov' must be logical")
@@ -291,7 +273,7 @@ fitFfm <- function(data, asset.var, ret.var, date.var, exposure.vars,
     stop("Invalid args: control parameter 'z.score' must be either crossSection or timeSeries")
   }
   analysis = analysis[1]
-  if (!(analysis %in% c("none", "ISM", "NEW")) || length(z.score) != 1) {
+  if (!(analysis %in% c("none", "ISM", "NEW")) || length(analysis) != 1) {
     stop("Invalid args: control parameter 'analysis' must be either ISM or NEW")
   }
 

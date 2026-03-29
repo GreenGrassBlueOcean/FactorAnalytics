@@ -2,7 +2,7 @@
 
 > Reference document for the GreenGrassBlueOcean refactoring effort.
 > Generated from `braverock/FactorAnalytics` v2.4.2 (2024-12-12).
-> Updated 2026-03-29 with Phase 0, 0.5, 1 (Dependency Pruning), 2 (Performance), and 4 (Testing & Bug Fixes) findings.
+> Updated 2026-03-29 with Phase 0, 0.5, 1 (Dependency Pruning), 2 (Performance), 4 (Testing & Bug Fixes), and 5 (Input Validation) findings.
 
 ---
 
@@ -375,7 +375,40 @@ during the Phase 1 `requireNamespace()` guard work.
    **Fix:** Type normalization at function entry converts `cum.spec.ret` to a named
    numeric vector; `unlist()` on `cum.ret.attr.f[i,]` before concatenation.
 
-### 4.7 Monte Carlo Subsystem (Isolated)
+### 4.7 xts Conversion Churn Evaluation (Phase 4.5) — Deferred
+
+`extractRegressionStats` performs 6–10 `data.table::as.xts.data.table()` conversions
+to produce xts-format residuals, factor returns, weights, and IC series. Profiling on
+`stocks145scores6` (145 assets × 60 months, WLS + EWMA) shows this is **not a
+bottleneck worth refactoring**:
+
+| Metric | Value |
+|---|---|
+| `fitFfm` total wall-clock (median, 3 runs) | ~950ms |
+| `extractRegressionStats` total (Rprof) | 10.3% (~98ms) |
+| `as.xts.data.table` (Rprof, sampled at 5ms) | 1.2% (~11ms) |
+| Per-conversion micro-benchmark (dcast + as.xts) | ~15ms |
+| Estimated 7 conversions (upper bound) | ~105ms (~11%) |
+
+The Rprof-sampled 1.2% is the most reliable number because the micro-benchmark
+includes `dcast()` time (which would remain even after refactoring). The true xts
+wrapping cost is negligible.
+
+The dominant cost centers are:
+- `lm()` fitting: 31% of wall-clock
+- `model.frame` / `model.matrix`: ~20%
+- `data.table` grouping and merge ops: bulk of the remaining time
+
+**Decision: Defer.** Refactoring `extractRegressionStats` to work in data.table
+throughout and convert to xts once at the boundary would touch all 3 model-type code
+paths (style-only, sector+style, MSCI) in a 300+ line function. The risk of
+introducing subtle ordering/naming regressions far outweighs the ~10ms actual gain.
+
+**When to revisit:** At STOXX 1800 scale (~1,800 assets × 120 months), if xts
+conversion time scales super-linearly and exceeds 25% of `fitFfm` wall-clock. Profile
+on production data before committing to refactoring.
+
+### 4.8 Monte Carlo Subsystem (Isolated)
 
 ```
 fmmc()                  [R/fmmc.R]
@@ -396,6 +429,33 @@ entirely — parallel execution now uses `parallel::parLapply()` with explicit
 `clusterExport()` (PSOCK workers need variable export), and sequential fallback uses
 `lapply()`. The single `RCurl::merge.list()` call was replaced with native R list
 merging.
+
+### 4.9 Bugs Fixed During Phase 5 (Input Validation)
+
+1. **`fitFfm()` `analysis` parameter length check** (line 294):
+   Checked `length(z.score) != 1` instead of `length(analysis) != 1`. The `analysis`
+   parameter's length was never validated.
+   **Fix:** Changed `length(z.score)` → `length(analysis)`.
+
+2. **`fitFfm()` / `specFfm()` duplicate validation**:
+   8 identical input checks (data, asset.var, date.var, ret.var, exposure.vars,
+   ret.var-in-exposure.vars, weight.var, rob.stats) were duplicated between `fitFfm()`
+   and `specFfm()`. Since `fitFfm()` calls `specFfm()`, every check ran twice.
+   **Fix:** Removed the 8 duplicate checks from `fitFfm()`. `specFfm()` is now the
+   single validation authority for shared parameters. Added column-existence check in
+   `specFfm()` that validates all referenced columns exist in `data`.
+
+3. **`fitTsfm()` missing column-existence validation**:
+   `fitTsfm()` had no checks for whether `asset.names`, `factor.names`, `mkt.name`, or
+   `rf.name` columns exist in `data`. Bad column names produced cryptic errors from `xts`
+   subsetting or `lm()` internals.
+   **Fix:** Added early column-existence validation for all four parameters, with clear
+   error messages naming the missing column(s).
+
+4. **`fitTsfm.control()` duplicate `normalize` check and typo**:
+   The `normalize` parameter was validated twice (lines 266–267 and 279–281). The error
+   message on line 276 had a typo: "Invaid" instead of "Invalid".
+   **Fix:** Removed the duplicate check; corrected the typo.
 
 ---
 
@@ -701,7 +761,7 @@ scale (percentages), not 0–1 (proportions).
 | `test-portDecomp.R` | 9 | Portfolio-level decomposition + weight validation | Fixture-backed |
 | `test-fmRsq.R` | 2 | R-squared computation | Fixture-backed |
 | `test-fmTstats.R` | 2 | T-statistics computation | Fixture-backed |
-| `test-input-validation.R` | 5 | Error handling, weight validation | Behavioural |
+| `test-input-validation.R` | 11 | Error handling, weight validation, column-existence checks | Behavioural (expanded Phase 5) |
 | `test-smoke-methods.R` | 23 | S3 methods, plots, reporting | Smoke (run-and-check) |
 | `test-vectorize.R` | 7 | EWMA/GARCH vectorization, Robust EWMA, stripped `lm` | Fixture-backed + behavioural (Phase 2) |
 | `test-unbalanced-panel.R` | 8 | Synthetic unbalanced panel: delist/entry assets | Behavioural (Phase 4) |
@@ -712,7 +772,8 @@ scale (percentages), not 0–1 (proportions).
 | `test-paFm.R` | 8 | Performance attribution: TSFM + 3 FFM types + plots | Behavioural (Phase 4) |
 | `test-fitTsfmUpDn.R` | 4 | Up/down market timing model | Behavioural (Phase 4) |
 | `test-roll-fitFfmDT.R` | 1 | Rolling-window FFM smoke test | Smoke (Phase 4) |
-| **Total** | **117** | | **438 assertions** |
+| `test-integration-pa.R` | 4 | PA integration: moment components, subsetting, custom moment fn | Behavioural (Phase 4) |
+| **Total** | **127** | | **470 assertions** |
 
 **Conditional skips (added Phase 1):** Three test blocks skip when optional packages
 are absent:
@@ -795,8 +856,9 @@ These are properties that **must** hold after every phase:
 | **0.5 — Smoke Tests** | ✅ Complete | 91 smoke tests for S3 methods | 254 total assertions; coverage 23.4% → 46.4% |
 | **1 — Dependency Pruning** | ✅ Complete | Imports 18 → 6; 3 packages removed; 12 to Suggests | 254 tests pass; 5 pre-existing bugs fixed |
 | **2 — Performance** | ✅ Complete | Vectorize 5 for loops; strip lm() objects; dedup R² | 269 assertions; 4 new fixtures; Robust EWMA bug fixed. Commit `3988d65`. |
-| **3 — API Hardening** | 🔲 Not started | Unbalanced panels; fmCov dimensionality; PA integration | — |
-| **4 — Testing & Bug Fixes** | 🔄 In progress | Unbalanced panel fix; fmCov invariants; coverage expansion; paFm/plot.pafm fixes | 438 assertions; 8 new test files; 3 pre-existing bugs fixed. Commit `7039a0a`. |
+| **3 — API Hardening** | ✅ Complete | `predict.ffm` newdata expansion; `char_levels` slot; `expand_newdata_ffm` helper | 294 assertions. Commits `2f81a1e`, `fde2aee`. |
+| **4 — Testing & Bug Fixes** | ✅ Complete | Unbalanced panel fix; fmCov invariants; coverage expansion; PA integration test; xts churn deferred | 458 assertions; 19 test files; 8 pre-existing bugs fixed. Commit `7039a0a`. |
+| **5 — Input Validation** | ✅ Complete | fitFfm/specFfm dedup (8 checks consolidated); column-existence in specFfm + fitTsfm; `analysis` length bug fixed; fitTsfm.control duplicate + typo | 470 assertions; 19 test files. ||
 
 ---
 

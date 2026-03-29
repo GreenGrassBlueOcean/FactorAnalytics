@@ -17,8 +17,10 @@ architecture reference are in:
 | **Phase 0.5 — Smoke Tests** | ✅ Complete | 91 smoke assertions in `test-smoke-methods.R`. 254 total tests, 0 failures. Coverage: 23.4% → 46.4% (2,095 / 4,512 lines). |
 | **Phase 1 — Dependency Pruning** | ✅ Complete | Imports 18 → 6; 3 packages removed (`RCurl`, `doSNOW`, `foreach`); 12 moved to Suggests. 5 pre-existing bugs fixed. R CMD check clean. |
 | **Phase 2 — Performance** | ✅ Complete | 5 for-loops vectorized; `lm` objects stripped; R² extraction deduped; Robust EWMA bug fixed. 269 tests, 0 failures. Commit `3988d65`. |
-| **Phase 3 — API Hardening** | 🔲 Not started | Unbalanced panel tests pass. `fmCov` dimensionality verified. |
-| **Phase 4 — Testing & Bug Fixes** | 🔄 In progress | Unbalanced panel bug fixed. fmCov invariants. Coverage expansion. 8 pre-existing bugs fixed. 438 assertions across 18 test files, 0 failures, 0 skips. Commit `7039a0a`. ||
+| **Phase 3 — API Hardening** | ✅ Complete | `predict.ffm` newdata expansion, `char_levels` slot. 294 assertions. Commits `2f81a1e`, `fde2aee`. ||
+| **Phase 4 — Testing & Bug Fixes** | ✅ Complete | Unbalanced panel bug fixed. fmCov invariants. Coverage expansion. PA integration test. xts churn profiled → deferred. 8 pre-existing bugs fixed. 458 assertions across 19 test files, 0 failures, 0 skips. Commit `7039a0a`. |
+| **Phase 5 — Input Validation** | ✅ Complete | fitFfm/specFfm dedup (8 checks consolidated). Column-existence checks in specFfm + fitTsfm. `analysis` length bug fixed. fitTsfm.control duplicate + typo fixed. 470 assertions across 19 test files, 0 failures. |
+| **Phase 6 — MSCI Branch Testing** | ✅ Complete | MSCI+style extraction bug fixed. 48 MSCI-specific assertions. `print.tsfm` example fix. 518 assertions across 20 test files, 0 failures. R CMD check clean. |
 
 ## Test Infrastructure
 
@@ -28,7 +30,7 @@ architecture reference are in:
   **unmodified** v2.4.2 upstream code by `tests/testthat/helpers/generate_fixtures.R`;
   4 added in Phase 2 for vectorized EWMA/GARCH intermediate results.
   Each fixture stores only numeric components (no full `lm`/`ffm` objects).
-- **Test files:** 18 files in `tests/testthat/`:
+- **Test files:** 19 files in `tests/testthat/`:
   - `test-fitFfm.R` — 5 FFM model branches + structure/dimension invariants
   - `test-fitTsfm.R` — 3 TSFM paths + manual `lm()` cross-validation
   - `test-fmCov.R` — Covariance matrices + identity verification
@@ -36,7 +38,7 @@ architecture reference are in:
   - `test-portDecomp.R` — Portfolio-level Sd/VaR/ES decomposition
   - `test-fmRsq.R` — R-squared computation
   - `test-fmTstats.R` — T-statistics computation
-  - `test-input-validation.R` — Error handling, weight validation
+  - `test-input-validation.R` — Error handling, weight validation, column-existence checks (Phase 5)
   - `test-smoke-methods.R` — 91 smoke tests for S3 methods, plots, reporting (Phase 0.5)
   - `test-vectorize.R` — 15 assertions: EWMA/GARCH vectorization, Robust EWMA, stripped `lm` (Phase 2)
   - `test-unbalanced-panel.R` — 26 assertions: synthetic unbalanced panel (Phase 4.1)
@@ -47,7 +49,9 @@ architecture reference are in:
   - `test-paFm.R` — 20 assertions: performance attribution TSFM + FFM + plots (Phase 4.3)
   - `test-fitTsfmUpDn.R` — 12 assertions: up/down market timing model (Phase 4.3)
   - `test-roll-fitFfmDT.R` — 2 assertions: rolling-window FFM smoke test (Phase 4.3)
-- **Total:** 438 assertions across 18 test files, 0 failures, 0 skips.
+  - `test-integration-pa.R` — 20 assertions: PortfolioAnalytics integration simulation (Phase 4.4)
+  - `test-fitFfm-msci.R` — 48 assertions: MSCI model (2-char pure + 2-char+style + downstream methods) (Phase 6)
+- **Total:** 518 assertions across 20 test files, 0 failures, 0 skips.
 - **Coverage:** 46.4% baseline (commit `4b58a6e`); target 55–60% after Phase 4.
 - **Tolerances:** Coefficients/factor returns `1e-10`, covariance `1e-8`, risk decomp `1e-6`.
 - **Setup:** `tests/testthat/setup.R` loads all bundled datasets and prepares the
@@ -134,6 +138,73 @@ selected".
   vector regardless of input type (data.frame or vector).
 - Also wrapped `cum.ret.attr.f[i,]` in `unlist()` to prevent `c()` producing a list
   when concatenating a scalar with a data.frame row.
+
+### `fitFfm()` `analysis` parameter length check — FIXED (Phase 5)
+
+Line 294 checked `length(z.score) != 1` instead of `length(analysis) != 1`. The
+`analysis` parameter's length was never validated.
+
+**Fix:** Changed `length(z.score)` → `length(analysis)`.
+
+### `fitFfm()` / `specFfm()` duplicate validation — FIXED (Phase 5)
+
+8 identical input checks (data, asset.var, date.var, ret.var, exposure.vars,
+ret.var-in-exposure.vars, weight.var, rob.stats) were duplicated between `fitFfm()`
+and `specFfm()`. Since `fitFfm()` calls `specFfm()`, every check ran twice.
+
+**Fix:** Removed the 8 duplicate checks from `fitFfm()`. `specFfm()` is now the
+single validation authority for shared parameters. Added column-existence check in
+`specFfm()` that validates all referenced columns exist in `data`.
+
+### `fitTsfm()` missing column-existence validation — FIXED (Phase 5)
+
+`fitTsfm()` had no checks for whether `asset.names`, `factor.names`, `mkt.name`, or
+`rf.name` columns exist in `data`. Bad column names produced cryptic errors from
+`xts` subsetting or `lm()` internals.
+
+**Fix:** Added early column-existence validation for all four parameters, with clear
+error messages naming the missing column(s).
+
+### `fitTsfm.control()` duplicate `normalize` check and typo — FIXED (Phase 5)
+
+The `normalize` parameter was validated twice (lines 266–267 and 279–281). The error
+message on line 276 had a typo: "Invaid" instead of "Invalid".
+
+**Fix:** Removed the duplicate check; corrected the typo.
+
+### `extractRegressionStats()` MSCI+style non-conformable matrix multiplication — FIXED (Phase 6)
+
+The MSCI branch of `extractRegressionStats()` (triggered when 2+ character exposures
+are present) computed `K <- length(factor.names) - length(exposures.char)` and then
+did `R_matrix %*% g[1:K]`. When numeric (style) exposures were also present, `K`
+included those coefficients, making `g[1:K]` longer than `ncol(R_matrix)`. This caused
+`"non-conformable arguments"` on any MSCI model with style variables.
+
+Additionally, the MSCI beta exposure matrix (`beta.mic`) only contained the Market
+intercept and categorical dummies — style exposure columns were missing. And
+`restriction.mat` was never assigned (stayed `NULL`).
+
+**Root causes:**
+- `K` conflated categorical and style coefficient counts
+- Style coefficients were not separated before R_matrix multiplication
+- `beta` lacked style exposure columns
+- `restriction.mat` not set in MSCI branch
+
+**Fix (applied to `R/fitFfmDT.R`, `extractRegressionStats()` MSCI branch):**
+- Replaced `K` with `K_cat = K1 + K2 - 1` (exactly `ncol(R_matrix)`)
+- When `exposures.num > 0`: separates `g[1:K_cat]` (categorical) from
+  `g[(K_cat+1):end]` (style), multiplies only categorical by R_matrix, reorders
+  to match `factor.names` ordering (Market, style, categorical levels)
+- Appends style exposure columns to `beta` with matching column order
+- Sets `restriction.mat <- R_matrix` from last period
+
+### `print.tsfm` roxygen example missing `make.names()` — FIXED (Phase 6)
+
+The `print.tsfm` example used `mkt.name="SP500.TR"` but loaded `managers` without
+`make.names()`. The column name is `"SP500 TR"` (with space). Phase 5's column-existence
+check in `fitTsfm()` exposed this (previously it silently fell through).
+
+**Fix:** Added `colnames(managers) <- make.names(colnames(managers))` to the example.
 
 ## Performance Optimisations (Phase 2)
 

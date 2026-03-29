@@ -185,7 +185,33 @@ fitTsfm <- function(asset.names, factor.names, mkt.name=NULL, rf.name=NULL,
   if (missing(factor.names) && !is.null(mkt.name)) {
     factor.names <- NULL
   }
-  
+
+  # Validate column existence in data before conversion
+  data_cols <- colnames(data)
+  if (is.null(data_cols)) {
+    data_cols <- colnames(as.data.frame(data))
+  }
+  missing_assets <- setdiff(asset.names, data_cols)
+  if (length(missing_assets) > 0L) {
+    stop("Invalid args: asset.names not found in data: ",
+         paste(missing_assets, collapse = ", "), call. = FALSE)
+  }
+  if (!is.null(factor.names)) {
+    missing_factors <- setdiff(factor.names, data_cols)
+    if (length(missing_factors) > 0L) {
+      stop("Invalid args: factor.names not found in data: ",
+           paste(missing_factors, collapse = ", "), call. = FALSE)
+    }
+  }
+  if (!is.null(mkt.name) && !(mkt.name %in% data_cols)) {
+    stop("Invalid args: mkt.name '", mkt.name, "' not found in data",
+         call. = FALSE)
+  }
+  if (!is.null(rf.name) && !(rf.name %in% data_cols)) {
+    stop("Invalid args: rf.name '", rf.name, "' not found in data",
+         call. = FALSE)
+  }
+
   # extract arguments to pass to different fit and variable selection functions
   decay <- control$decay
   nvmin <- control$nvmin

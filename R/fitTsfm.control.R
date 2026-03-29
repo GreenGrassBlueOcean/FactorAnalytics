@@ -273,11 +273,8 @@ fitTsfm.control <- function(
 		stop("Control parameter 'nvmin' must be a positive integer")
 	}
 	if (nvmax < nvmin || nvmin < length(force.in)) {
-		stop("Invaid args: nvmax should be >= nvmin and nvmin 
+		stop("Invalid args: nvmax should be >= nvmin and nvmin
 						should be >= length(force.in)")
-	}
-	if (!is.logical(normalize) || length(normalize) != 1) {
-		stop("Invalid args: control parameter 'normalize' must be logical")
 	}
 	if (!(lars.criterion %in% c("Cp","cv"))) {
 		stop("Invalid args: lars.criterion must be 'Cp' or 'cv'.")

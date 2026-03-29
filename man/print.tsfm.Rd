@@ -21,6 +21,7 @@ residual volatilities from the fitted object.
 }
 \examples{
 data(managers, package = 'PerformanceAnalytics')
+colnames(managers) <- make.names(colnames(managers))
 fit <- fitTsfm(asset.names=colnames(managers[,(1:6)]),
                factor.names=colnames(managers[,7:9]), 
                mkt.name="SP500.TR", data=managers)
