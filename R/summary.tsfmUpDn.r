@@ -43,6 +43,7 @@
 #'
 #'  summary(fitUpDn)
 #'
+#' @importFrom stats printCoefmat
 #' @method summary tsfmUpDn
 #' @export
 

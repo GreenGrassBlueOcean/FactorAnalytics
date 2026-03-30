@@ -52,6 +52,7 @@
 #' # summary of lm fit for a single period
 #' summary(fit$factor.fit[[1]])
 #'
+#' @importFrom stats printCoefmat
 #' @method summary ffm
 #' @export
 

@@ -67,6 +67,7 @@
 #' # summary of lm fit for a single asset
 #' summary(fit$asset.fit[[1]])
 #'
+#' @importFrom stats printCoefmat
 #' @method summary tsfm
 #' @export
 

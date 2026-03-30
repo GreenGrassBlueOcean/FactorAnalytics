@@ -25,6 +25,8 @@
 #'
 #' @importFrom xts as.xts merge.xts
 #' @importFrom zoo index
+#' @importFrom graphics abline legend lines mtext panel.smooth rug
+#' @importFrom stats cor cov2cor density
 #'
 #' @importFrom lattice panel.barchart panel.grid barchart
 #' @importFrom PerformanceAnalytics chart.TimeSeries chart.ACFplus chart.Histogram

@@ -63,6 +63,7 @@
 #' pCornishFisher(q, n=5, skew=2, ekurt=6)
 #' }
 #'
+#' @importFrom stats pnorm rnorm
 #' @rdname CornishFisher
 #' @export
 

@@ -50,7 +50,7 @@
 #' methods.
 #'
 #' @importFrom xts as.xts
-#' @importFrom zoo as.yearmon
+#' @importFrom zoo as.yearmon as.Date
 #' @importFrom PerformanceAnalytics checkData skewness kurtosis
 #'
 #'

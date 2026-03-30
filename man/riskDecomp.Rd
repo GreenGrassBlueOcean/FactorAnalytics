@@ -75,7 +75,11 @@ Where, K is the number of factors.
 }
 \description{
 Compute the factor contributions to Sd, VaR and ES of returns based on Euler's theorem, given 
-the fitted factor model.
+the fitted factor model. This is a convenience wrapper that dispatches to the
+specialized decomposition functions: \code{\link{fmSdDecomp}},
+\code{\link{fmVaRDecomp}}, \code{\link{fmEsDecomp}},
+\code{\link{portSdDecomp}}, \code{\link{portVaRDecomp}}, and
+\code{\link{portEsDecomp}}.
 }
 \examples{
 # Time Series Factor Model
@@ -123,11 +127,14 @@ decompES = riskDecomp(fit.cross, risk = "ES")
 portES.decomp = riskDecomp(fit.cross, weights = wtsStocks145GmvLo, risk = "ES", portDecomp = TRUE)  
 }
 \seealso{
+\code{\link{fmSdDecomp}}, \code{\link{fmVaRDecomp}},
+\code{\link{fmEsDecomp}} for asset-level decomposition.
+
+\code{\link{portSdDecomp}}, \code{\link{portVaRDecomp}},
+\code{\link{portEsDecomp}} for portfolio-level decomposition.
+
 \code{\link{fitTsfm}}, \code{\link{fitFfm}}
 for the different factor model fitting functions.
-
-\code{\link{portSdDecomp}} for factor model Sd decomposition.
-\code{\link{portVaRDecomp}} for factor model VaR decomposition.
 }
 \author{
 Eric Zivot, Yi-An Chen, Sangeetha Srinivasan, Lingjie Yi and Avinash Acharya

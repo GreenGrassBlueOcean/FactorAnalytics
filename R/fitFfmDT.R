@@ -150,7 +150,7 @@ map_coefficients_to_factor_returns <- function(g_row, R_matrix, K_cat, col_names
 #'
 #' @importFrom data.table as.data.table last setkey setkeyv copy shift key
 #' setnames setcolorder
-#' @importFrom stats ts
+#' @importFrom stats ts cor
 #'
 #' @param data data.frame of the balanced panel data containing the variables
 #' \code{asset.var}, \code{ret.var}, \code{exposure.vars}, \code{date.var} and

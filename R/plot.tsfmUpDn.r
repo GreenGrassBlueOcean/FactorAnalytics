@@ -12,6 +12,7 @@
 #' 
 #' @importFrom xts merge.xts
 #' @importFrom zoo coredata
+#' @importFrom graphics abline legend lines
 #' @param x an object of class \code{tsfmUpDn} produced by \code{fitTsfmUpDn}.
 #' @param asset.name A vector of character to show single or multiple assets names. The defualt if 
 #' \code{NULL}.  

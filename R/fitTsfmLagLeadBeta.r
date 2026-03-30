@@ -81,6 +81,7 @@
 #' summary(fit)
 #' fitted(fit)
 #' 
+#' @importFrom stats lag
 #' @export
 
 fitTsfmLagLeadBeta <- function(asset.names, mkt.name, rf.name=NULL, 

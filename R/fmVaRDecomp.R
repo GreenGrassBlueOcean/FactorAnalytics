@@ -22,7 +22,8 @@
 #' calculation of Normal VaR (adapted from a portfolio context to factor models)
 #' 
 #' @importFrom xts as.xts
-#' @importFrom zoo time<- 
+#' @importFrom zoo time<-
+#' @importFrom stats time
 #' 
 #' @param object fit object of class \code{tsfm}, \code{sfm} or \code{ffm}.
 #' @param factor.cov optional user specified factor covariance matrix with 

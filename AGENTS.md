@@ -24,16 +24,19 @@ architecture reference are in:
 | **Phase 7 — Shared model.matrix Helper** | ✅ Complete | Extracted `build_beta_star`, `build_restriction_matrix`, `apply_restriction` helpers. 3 code sites → 1 source of truth for categorical design matrix pipeline. Dead code removed (`formula.expochar`, `formulaL`, `beta.expochar`, `beta1`/`beta2` columns). 623 assertions across 21 test files, 0 failures. R CMD check clean. |
 | **Phase 8 — extractRegressionStats Cleanup** | ✅ Complete | Extracted `build_factor_names` (6-way factor.names logic → 1 helper) + `map_coefficients_to_factor_returns` (sector/MSCI coefficient mapping dedup). `.()` → `list()` cleanup in `extractRegressionStats`. Dead NSE vars removed (`factor.returns1`, `factor.returns2`). 645 assertions across 22 test files, 0 failures. R CMD check clean. |
 | **Phase 9 — S3 Method Consolidation** | ✅ Complete | 4 shared risk helpers (`make_beta_star`, `make_factor_star_cov`, `normalize_fm_residuals`, `make_resid_diag`) in `R/helpers-risk.R`. Integrated into 8 files / 15+ methods. `fmSdDecomp.ffm` NA-zeroing inconsistency fixed. 690 assertions across 23 test files, 0 failures. R CMD check clean. |
+| **Phase 9.6 — riskDecomp Dispatcher** | ✅ Complete | `riskDecomp.R` 762→~200 lines: thin dispatcher to 6 specialized methods. Portfolio residual normalization bug eliminated from `repRisk` path. Orphaned `@importFrom` directives relocated to correct files. 67 dispatch assertions. 757 total assertions across 24 test files, 0 failures. R CMD check clean (0 errors, 0 warnings, 1 note). |
 
 ## Test Infrastructure
 
 - **Framework:** `testthat` 3.0+ (Edition 3). Configured in `DESCRIPTION` and
   `tests/testthat.R`.
-- **Fixtures:** 26 `.rds` files in `tests/testthat/fixtures/`. 22 generated from
+- **Fixtures:** 26 `.rds` files in `tests/testthat/fixtures/`. 16 generated from
   **unmodified** v2.4.2 upstream code by `tests/testthat/helpers/generate_fixtures.R`;
-  4 added in Phase 2 for vectorized EWMA/GARCH intermediate results.
+  4 added in Phase 2 for vectorized EWMA/GARCH intermediate results;
+  6 portDecomp fixtures regenerated after the portfolio residual normalization
+  bug fix (commit `7fc0fe3`) with corrected slot names.
   Each fixture stores only numeric components (no full `lm`/`ffm` objects).
-- **Test files:** 22 files in `tests/testthat/`:
+- **Test files:** 23 files in `tests/testthat/`:
   - `test-fitFfm.R` — 5 FFM model branches + structure/dimension invariants
   - `test-fitTsfm.R` — 3 TSFM paths + manual `lm()` cross-validation
   - `test-fmCov.R` — Covariance matrices + identity verification
@@ -57,8 +60,9 @@ architecture reference are in:
   - `test-helpers-design-matrix.R` — 18 assertions: build_beta_star, build_restriction_matrix, apply_restriction unit tests + round-trip vs expand_newdata_ffm (Phase 7)
   - `test-helpers-extract-stats.R` — 22 assertions: build_factor_names (6 model configs + round-trip), map_coefficients_to_factor_returns (sector/MSCI/pure, exact match against fitted models) (Phase 8)
   - `test-helpers-risk.R` — 33 assertions: make_beta_star (asset/portfolio/ffm), make_factor_star_cov (structure/round-trip/NULL colnames), normalize_fm_residuals (asset/portfolio correctness), make_resid_diag (multi/single asset) (Phase 9)
-- **Total:** 690 assertions across 23 test files, 0 failures, 0 skips.
-- **Coverage:** 46.4% baseline (commit `4b58a6e`).
+  - `test-riskDecomp-dispatch.R` — 67 assertions: riskDecomp dispatch equivalence (Sd/VaR/ES × asset/port × tsfm/ffm), invert convention, input validation, repRisk smoke (Phase 9.6)
+- **Total:** 757 assertions across 24 test files, 0 failures, 0 skips.
+- **Coverage:** 57.8% (post-Phase 9, commit `526d2c3`). Baseline was 46.4% at commit `4b58a6e`.
 - **Tolerances:** Coefficients/factor returns `1e-10`, covariance `1e-8`, risk decomp `1e-6`.
 - **Setup:** `tests/testthat/setup.R` loads all bundled datasets and prepares the
   `dat145` subset used across multiple test files.
@@ -259,6 +263,15 @@ The `print.tsfm` example used `mkt.name="SP500.TR"` but loaded `managers` withou
 check in `fitTsfm()` exposed this (previously it silently fell through).
 
 **Fix:** Added `colnames(managers) <- make.names(colnames(managers))` to the example.
+
+### `fmSdDecomp.ffm()` missing NA-zeroing in beta — FIXED (Phase 9)
+
+`fmSdDecomp.ffm()` was the only risk decomposition method that did **not** do
+`beta[is.na(beta)] <- 0` before constructing `beta.star`. All other methods (`.tsfm`,
+`.sfm`, and all VaR/ES methods) zeroed NAs consistently.
+
+**Fix:** Resolved automatically by switching to `make_beta_star()`, which always zeros
+NAs internally.
 
 ## Performance Optimisations (Phase 2)
 

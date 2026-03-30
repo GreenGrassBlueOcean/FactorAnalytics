@@ -17,6 +17,7 @@
 #' 
 #' @importFrom PerformanceAnalytics checkData
 #' @importFrom zoo time<-
+#' @importFrom stats time
 #' 
 #' @param asset.names vector containing syntactically valid names of assets, whose returns or 
 #' excess returns are the dependent variable.

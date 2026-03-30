@@ -36,6 +36,8 @@
 #'
 #' @importFrom xts merge.xts addLegend
 #' @importFrom zoo rollapply
+#' @importFrom graphics abline legend lines mtext panel.smooth rug
+#' @importFrom stats cor cov2cor density formula hatvalues
 #'
 #' @importFrom lattice barchart panel.barchart panel.grid
 #' @importFrom PerformanceAnalytics chart.TimeSeries chart.ACFplus chart.Histogram
