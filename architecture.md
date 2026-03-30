@@ -2,7 +2,7 @@
 
 > Reference document for the GreenGrassBlueOcean refactoring effort.
 > Generated from `braverock/FactorAnalytics` v2.4.2 (2024-12-12).
-> Updated 2026-03-30 with Phases 0–8 findings.
+> Updated 2026-03-30 with Phases 0–9.6 findings.
 
 ---
 
@@ -169,6 +169,36 @@ Used in `extractRegressionStats()` — replaces duplicated coefficient mapping i
 sector and MSCI branches. The style-only branch uses `build_factor_names` only (no
 restriction matrix involved).
 
+### 2.6 Shared Risk Helpers (Phase 9)
+
+Four unexported helpers in `R/helpers-risk.R` consolidate the "augmented factor model"
+setup pattern that was duplicated across all 15+ risk decomposition methods:
+
+| Helper | Purpose | Call sites |
+|---|---|---|
+| `make_beta_star(beta, resid_sd, weights=NULL)` | Augmented β* = [β, σ_e]; zeros NAs; handles asset/portfolio | 15 methods across 8 files |
+| `make_factor_star_cov(factor_cov)` | Augmented (K+1)×(K+1) covariance with unit residual variance | 15 methods |
+| `normalize_fm_residuals(resid_mat, resid_sd, weights=NULL)` | z(t) = e(t)/σ (asset) or z_p(t) = Σw·e/σ_p (portfolio) | 8 methods |
+| `make_resid_diag(resid_var)` | Diagonal residual covariance D; handles single-asset edge case | 4 methods |
+
+### 2.7 riskDecomp Dispatcher (Phase 9.6)
+
+`riskDecomp()` is a convenience wrapper that routes to specialized methods based on the
+`risk` and `portDecomp` arguments:
+
+| `risk` | `portDecomp=TRUE` | `portDecomp=FALSE` |
+|--------|-------------------|--------------------|
+| `"Sd"` | `portSdDecomp()` | `fmSdDecomp()` |
+| `"VaR"` | `portVaRDecomp()` | `fmVaRDecomp()` |
+| `"ES"` | `portEsDecomp()` | `fmEsDecomp()` |
+
+**Invert convention adapter:** `riskDecomp` and the specialized port methods have
+opposite `invert` semantics. The internal `apply_riskDecomp_invert()` helper bridges
+this: always calls specialized methods with `invert=FALSE` (raw output) and applies the
+riskDecomp convention (`!invert` → negate risk/marginal/component) post-hoc.
+
+`repRisk()` calls `riskDecomp()` at ~20 call sites, making it the primary consumer.
+
 **Known inconsistency (sector branch):** For sector+style models with intercept,
 `factor.names` order is `c("Market", style, categorical)` but `colnames(factor.returns)`
 and `colnames(beta)` are `c("Market", categorical, style)`. A reconciliation step at the
@@ -249,28 +279,28 @@ All downstream functions are generic (`UseMethod`) with methods for `tsfm` and `
            │             │                │                  │
            ▼             ▼                ▼                  ▼
      ┌──────────┐  ┌──────────┐    ┌──────────┐     ┌──────────────┐
-     │  fmCov   │  │riskDecomp│    │  paFm    │     │ fmTstats     │
-     │  (cov)   │  │(Sd/VaR/ES│    │(perf     │     │ fmRsq        │
-     │          │  │ Euler)   │    │ attrib)  │     │ VIF          │
+     │  fmCov   │  │fmSdDecomp│    │  paFm    │     │ fmTstats     │
+     │  (cov)   │  │fmVaRDec  │    │(perf     │     │ fmRsq        │
+     │          │  │fmEsDecomp│    │ attrib)  │     │ VIF          │
      └──────────┘  └─────┬────┘    └──────────┘     └──────────────┘
                          │                               (ffm only)
-           ┌─────────────┼─────────────────┐
-           │             │                 │
-           ▼             ▼                 ▼
-     ┌──────────┐  ┌──────────┐    ┌──────────────┐
-     │fmSdDecomp│  │fmVaRDecomp│   │fmEsDecomp   │
-     │          │  │           │   │              │
-     └──────────┘  └───────────┘   └──────────────┘
-           │             │                 │
-           ▼             ▼                 ▼
-     ┌──────────┐  ┌──────────┐    ┌──────────────┐
-     │portSdDec │  │portVaRDec│    │portEsDecomp  │
-     │          │  │          │    │              │
-     └──────────┘  └──────────┘    └──────────────┘
+                         ▼
+                   ┌──────────┐
+                   │portSdDec │
+                   │portVaRDec│
+                   │portEsDec │
+                   └─────┬────┘
+                         │
+                         ▼
+                   ┌──────────────┐
+                   │ riskDecomp   │  (thin dispatcher, Phase 9.6)
+                   │  → delegates │  Routes to above 6 methods
+                   └──────────────┘
 
      ┌───────────────────────────────────────────────┐
      │  Reporting / Plotting Layer                   │
-     │  repRisk, repReturn, repExposures             │
+     │  repRisk → riskDecomp → specialized methods   │
+     │  repReturn, repExposures                      │
      │  plot.ffm, plot.tsfm, plot.pafm               │
      │  summary.ffm, summary.tsfm                    │
      │  print.ffm, print.tsfm                        │
@@ -285,7 +315,7 @@ Which slots each consumer reads from the fitted object:
 | Consumer | `$beta` | `$factor.returns` | `$residuals` | `$factor.cov` | `$resid.var` / `$resid.sd` | `$factor.fit` / `$asset.fit` | `$data` |
 |---|---|---|---|---|---|---|---|
 | `fmCov` | ✓ | | | ✓ | ✓ | | ✓ (tsfm only) |
-| `riskDecomp` | ✓ | ✓ (via data) | ✓ | ✓ (via cov) | ✓ | | ✓ |
+| `riskDecomp` | *(thin dispatcher — delegates to the 6 methods below; accesses no slots directly)* |||||||
 | `fmSdDecomp` | ✓ | | | ✓ (via cov) | ✓ | | ✓ |
 | `fmVaRDecomp` | ✓ | | ✓ | ✓ (via cov) | ✓ | | ✓ |
 | `fmEsDecomp` | ✓ | | ✓ | ✓ (via cov) | ✓ | | ✓ |
@@ -687,7 +717,7 @@ converts the data *back* to data.frame (line 1267). This is a Phase 3 candidate.
 
 | Function | Classes | Description |
 |---|---|---|
-| `riskDecomp` | tsfm, ffm | Unified Sd/VaR/ES decomposition |
+| `riskDecomp` | tsfm, ffm | Thin dispatcher to 6 methods below (Phase 9.6) |
 | `fmSdDecomp` | tsfm, sfm, ffm | Standard deviation decomposition |
 | `fmVaRDecomp` | tsfm, sfm, ffm | Value-at-Risk decomposition |
 | `fmEsDecomp` | tsfm, sfm, ffm | Expected Shortfall decomposition |
@@ -839,7 +869,9 @@ scale (percentages), not 0–1 (proportions).
 | `test-fitFfm-msci.R` | 12 | MSCI: LS/WLS/W-Rob × pure/style, fmCov, VaR, paFm, plot/print | Structural + behavioural (Phase 6) |
 | `test-helpers-design-matrix.R` | 5 | `build_beta_star`, `build_restriction_matrix`, `apply_restriction` unit tests + round-trip | Behavioural (Phase 7) |
 | `test-helpers-extract-stats.R` | 7 | `build_factor_names` (6 configs), `map_coefficients_to_factor_returns` (sector/MSCI/pure) | Behavioural (Phase 8) |
-| **Total** | **151** | | **645 assertions** |
+| `test-helpers-risk.R` | 9 | `make_beta_star`, `make_factor_star_cov`, `normalize_fm_residuals`, `make_resid_diag` | Behavioural (Phase 9) |
+| `test-riskDecomp-dispatch.R` | 20 | riskDecomp dispatch equivalence (Sd/VaR/ES × asset/port × tsfm/ffm), invert convention, repRisk smoke | Behavioural (Phase 9.6) |
+| **Total** | **180** | | **757 assertions** |
 
 **Conditional skips (added Phase 1):** Three test blocks skip when optional packages
 are absent:
@@ -862,10 +894,14 @@ are absent:
 `fitTsfm.R`, `fitTsfm.control.R`, `fitTsfmMT.R`, `fitTsfmUpDn.R`,
 `fitTsfmLagLeadBeta.r`
 
-**Risk decomposition** (8 files, 109 KB):
-`riskDecomp.R`, `fmSdDecomp.R`, `fmVaRDecomp.R`, `fmEsDecomp.R`,
-`portSdDecomp.R`, `portVaRDecomp.R`, `portEsDecomp.R`, `portVolDecomp.R`,
-`assetDecomp.R`
+**Risk decomposition** (9 files, ~90 KB):
+`riskDecomp.R` (thin dispatcher, ~200 lines), `fmSdDecomp.R`, `fmVaRDecomp.R`,
+`fmEsDecomp.R`, `portSdDecomp.R`, `portVaRDecomp.R`, `portEsDecomp.R`,
+`portVolDecomp.R`, `assetDecomp.R`
+
+**Risk helpers** (1 file, ~4 KB):
+`helpers-risk.R` (Phase 9: `make_beta_star`, `make_factor_star_cov`,
+`normalize_fm_residuals`, `make_resid_diag`)
 
 **Covariance & stats** (4 files, 31 KB):
 `fmCov.R`, `fmRsq.R`, `fmTstats.R`, `VIF.R`
@@ -928,6 +964,8 @@ These are properties that **must** hold after every phase:
 | **6 — MSCI Branch Testing** | ✅ Complete | MSCI+style extraction bug fixed; 135 MSCI assertions (LS/WLS/W-Rob); paFm decomposition; `return.cov`/`model.MSCI` on ffm; fast CI | 605 assertions; 20 test files. |
 | **7 — Shared model.matrix Helper** | ✅ Complete | `build_beta_star`, `build_restriction_matrix`, `apply_restriction` helpers; dead code removed | 623 assertions; 21 test files. Commit `6ee9673`. |
 | **8 — extractRegressionStats Cleanup** | ✅ Complete | `build_factor_names`, `map_coefficients_to_factor_returns` helpers; `.()` → `list()` cleanup; dead NSE vars removed | 645 assertions; 22 test files. Commit `492a187`. |
+| **9 — S3 Method Consolidation** | ✅ Complete | 4 shared risk helpers in `helpers-risk.R`; integrated into 8 files / 15+ methods; `fmSdDecomp.ffm` NA-zeroing fix | 690 assertions; 23 test files. Commit `526d2c3`. |
+| **9.6 — riskDecomp Dispatcher** | ✅ Complete | `riskDecomp.R` 762→~200 lines: thin dispatcher; portfolio residual normalization bug eliminated from `repRisk` path; orphaned imports relocated | 757 assertions; 24 test files. Commit `8c2a429`. |
 
 ---
 

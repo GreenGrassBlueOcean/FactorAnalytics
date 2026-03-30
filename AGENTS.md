@@ -36,7 +36,7 @@ architecture reference are in:
   6 portDecomp fixtures regenerated after the portfolio residual normalization
   bug fix (commit `7fc0fe3`) with corrected slot names.
   Each fixture stores only numeric components (no full `lm`/`ffm` objects).
-- **Test files:** 23 files in `tests/testthat/`:
+- **Test files:** 24 files in `tests/testthat/`:
   - `test-fitFfm.R` — 5 FFM model branches + structure/dimension invariants
   - `test-fitTsfm.R` — 3 TSFM paths + manual `lm()` cross-validation
   - `test-fmCov.R` — Covariance matrices + identity verification
