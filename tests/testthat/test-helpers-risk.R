@@ -176,3 +176,49 @@ test_that("make_resid_diag — single asset returns 1x1 matrix", {
   expect_equal(dim(result), c(1L, 1L))
   expect_equal(result[1, 1], 0.04)
 })
+
+# --- extract_fm_components ---
+
+test_that("extract_fm_components — tsfm returns correct slots", {
+  fit <- fitTsfm(
+    asset.names = colnames(managers[, 1:6]),
+    factor.names = colnames(managers[, 7:9]),
+    rf.name = colnames(managers[, 10]),
+    data = managers
+  )
+  fm <- extract_fm_components(fit)
+  expect_equal(nrow(fm$beta), length(fit$asset.names))
+  expect_equal(ncol(fm$beta), length(fit$factor.names))
+  expect_true(is.numeric(fm$resid.sd))
+  expect_equal(length(fm$resid.sd), length(fit$asset.names))
+  expect_equal(fm$factor.names, fit$factor.names)
+  expect_equal(fm$asset.names, fit$asset.names)
+  expect_equal(fm$K, length(fit$factor.names))
+  expect_true(is.matrix(fm$factor.cov))
+  expect_equal(dim(fm$factor.cov), c(fm$K, fm$K))
+  expect_true(is.function(fm$get_R))
+  # get_R should return xts for a known asset
+  R <- fm$get_R(fit$asset.names[1])
+  expect_s3_class(R, "xts")
+})
+
+test_that("extract_fm_components — ffm returns correct slots", {
+  fit <- fitFfm(
+    data = dat145,
+    asset.var = "TICKER", date.var = "DATE", ret.var = "RETURN",
+    exposure.vars = c("SECTOR", "ROE", "BP", "SIZE"),
+    addIntercept = TRUE
+  )
+  fm <- extract_fm_components(fit)
+  expect_true(is.matrix(fm$beta))
+  expect_equal(nrow(fm$beta), length(fit$asset.names))
+  expect_true(is.numeric(fm$resid.sd))
+  expect_equal(fm$factor.names, fit$factor.names)
+  expect_equal(fm$asset.names, fit$asset.names)
+  expect_true(is.matrix(fm$factor.cov))
+  expect_true(is.function(fm$get_R))
+  # get_R should return xts for a known asset
+  R <- fm$get_R(fit$asset.names[1])
+  expect_s3_class(R, "xts")
+  expect_true(ncol(R) == 1)
+})

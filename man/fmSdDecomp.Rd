@@ -8,9 +8,9 @@
 \usage{
 fmSdDecomp(object, ...)
 
-\method{fmSdDecomp}{tsfm}(object, factor.cov, use = "pairwise.complete.obs", ...)
+\method{fmSdDecomp}{tsfm}(object, factor.cov = NULL, use = "pairwise.complete.obs", ...)
 
-\method{fmSdDecomp}{ffm}(object, factor.cov, ...)
+\method{fmSdDecomp}{ffm}(object, factor.cov = NULL, ...)
 }
 \arguments{
 \item{object}{fit object of class \code{tsfm} or \code{ffm}.}

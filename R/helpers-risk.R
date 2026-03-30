@@ -11,6 +11,66 @@
 # =============================================================================
 
 
+#' Extract common model components for risk decomposition
+#'
+#' Unified extraction of beta, residual SD, factor returns, factor covariance,
+#' factor names, asset names, and an asset-return retrieval closure from either
+#' tsfm or ffm objects.
+#'
+#' @param object fit object of class tsfm or ffm
+#' @param factor.cov optional user-supplied K x K factor covariance matrix.
+#'   If NULL (default), computed from sample for tsfm or read from object for ffm.
+#' @param use method for computing covariances for tsfm; ignored for ffm
+#' @return list with: beta, resid.sd, factors.xts, factor.names, asset.names,
+#'   K, factor.cov, get_R (closure returning xts of asset returns)
+#' @keywords internal
+extract_fm_components <- function(object, factor.cov = NULL,
+                                  use = "pairwise.complete.obs") {
+  if (inherits(object, "tsfm")) {
+    beta <- object$beta
+    resid.sd <- object$resid.sd
+    factors.xts <- object$data[, object$factor.names]
+    factor.names <- object$factor.names
+    asset.names <- object$asset.names
+    K <- length(factor.names)
+    if (is.null(factor.cov)) {
+      factor.cov <- cov(as.matrix(factors.xts), use = use)
+    }
+    get_R <- function(i) object$data[, i]
+  } else if (inherits(object, "ffm")) {
+    beta <- object$beta
+    resid.sd <- sqrt(object$resid.var)
+    factors.xts <- object$factor.returns
+    factor.names <- object$factor.names
+    asset.names <- object$asset.names
+    K <- length(factor.names)
+    if (is.null(factor.cov)) {
+      factor.cov <- object$factor.cov
+    }
+    get_R <- function(i) {
+      subrows <- which(object$data[[object$asset.var]] == i)
+      dts <- object$data[subrows, object$date.var]
+      # Robust POSIXct -> Date conversion (Phase 9.7 pattern)
+      if (inherits(dts, "POSIXt")) {
+        tz <- attr(dts, "tzone")
+        if (is.null(tz) || tz == "") tz <- Sys.timezone()
+        dts <- as.Date(dts, tz = tz)
+      } else {
+        dts <- as.Date(dts)
+      }
+      xts::as.xts(object$data[subrows, object$ret.var, drop = FALSE],
+                   order.by = dts)
+    }
+  } else {
+    stop("extract_fm_components: object must be of class 'tsfm' or 'ffm'")
+  }
+
+  list(beta = beta, resid.sd = resid.sd, factors.xts = factors.xts,
+       factor.names = factor.names, asset.names = asset.names,
+       K = K, factor.cov = factor.cov, get_R = get_R)
+}
+
+
 #' Build augmented beta matrix with residual pseudo-factor
 #'
 #' Constructs beta.star by appending residual standard deviations as the

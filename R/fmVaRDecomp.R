@@ -98,204 +98,87 @@ fmVaRDecomp <- function(object, ...){
 #' @method fmVaRDecomp tsfm
 #' @export
 
-fmVaRDecomp.tsfm <- function(object, factor.cov, p=0.05, type=c("np","normal"), 
-                             use="pairwise.complete.obs", ...) {
-  # set default for type
-  type = type[1]
-  if (!(type %in% c("np","normal"))) {
-    stop("Invalid args: type must be 'np' or 'normal' ")
-  }
-  
-  beta.star <- make_beta_star(object$beta, object$resid.sd)
-  
-  # factor returns and residuals data
-  factors.xts <- object$data[,object$factor.names]
-  resid.xts <- normalize_fm_residuals(residuals(object), object$resid.sd)
-  
-  if (type=="normal") {
-    # get cov(F): K x K
-    if (missing(factor.cov)) {
-      factor.cov = cov(as.matrix(factors.xts), use=use, ...)
-    } else {
-      if (!identical(dim(factor.cov), as.integer(c(ncol(factor), ncol(factor))))) {
-        stop("Dimensions of user specified factor covariance matrix are not
-           compatible with the number of factors in the fitTsfm object")
-      }
-    }
-    factor.star.cov <- make_factor_star_cov(factor.cov)
-    # factor expected returns
-    MU <- c(colMeans(factors.xts, na.rm=TRUE), 0)
-    names(MU) <- colnames(beta.star)
-    # SIGMA*Beta to compute normal mVaR
-    SIGB <-  beta.star %*% factor.star.cov
-  }
-  
-  # initialize lists and matrices
-  N <- length(object$asset.names)
-  K <- length(object$factor.names)
-  VaR.fm <- rep(NA, N)
-  idx.exceed <- list()
-  n.exceed <- rep(NA, N)
-  names(VaR.fm) = names(n.exceed) = object$asset.names
-  mVaR <- matrix(NA, N, K+1)
-  cVaR <- matrix(NA, N, K+1)
-  pcVaR <- matrix(NA, N, K+1)
-  rownames(mVaR)=rownames(cVaR)=rownames(pcVaR)=object$asset.names
-  colnames(mVaR)=colnames(cVaR)=colnames(pcVaR)=c(object$factor.names, "Residuals")
-  
-  for (i in object$asset.names) {
-    # return data for asset i
-    R.xts <- object$data[,i]
-    
-    if (type=="np") {
-      # get VaR for asset i
-      VaR.fm[i] <- quantile(R.xts, probs=p, na.rm=TRUE, ...)
-      
-      # get F.star data object
-      factor.star <- merge(factors.xts, resid.xts[,i])
-      colnames(factor.star)[dim(factor.star)[2]] <- "Residuals"
-      
-      # epsilon is apprx. using Silverman's rule of thumb (bandwidth selection)
-      # the constant 2.575 corresponds to a triangular kernel 
-      eps <- 2.575*sd(R.xts, na.rm =TRUE) * (nrow(R.xts)^(-1/5))
-      
-      # compute marginal VaR as expected value of factor returns, such that the
-      # asset return was incident in the triangular kernel region peaked at the 
-      # VaR value and bandwidth = epsilon.
-      k.weight <- as.vector(1 - abs(R.xts - VaR.fm[i]) / eps)
-      k.weight[k.weight<0] <- 0
-      mVaR[i,] <- colMeans(factor.star*k.weight, na.rm =TRUE)
-      
-    } else if (type=="normal")  {
-      # get VaR for asset i
-      VaR.fm[i] <- beta.star[i,] %*% MU + 
-        sqrt(beta.star[i,,drop=F] %*% factor.star.cov %*% t(beta.star[i,,drop=F]))*qnorm(p)
-      
-      # compute marginal VaR
-      mVaR[i,] <- t(MU) + SIGB[i,] * qnorm(p)/sd(R.xts, na.rm=TRUE)
-    }
-    
-    # index of VaR exceedances
-    idx.exceed[[i]] <- which(R.xts <= VaR.fm[i])
-    # number of VaR exceedances
-    n.exceed[i] <- length(idx.exceed[[i]])
-    
-    # correction factor to ensure that sum(cVaR) = asset VaR
-    cf <- as.numeric( VaR.fm[i] / sum(mVaR[i,]*beta.star[i,], na.rm=TRUE) )
-    
-    # compute marginal, component and percentage contributions to VaR
-    # each of these have dimensions: N x (K+1)
-    mVaR[i,] <- cf * mVaR[i,]
-    cVaR[i,] <- mVaR[i,] * beta.star[i,]
-    pcVaR[i,] <- 100* cVaR[i,] / VaR.fm[i]
-  }
-  
-  fm.VaR.decomp <- list(VaR.fm=VaR.fm, n.exceed=n.exceed, idx.exceed=idx.exceed, 
-                        mVaR=mVaR, cVaR=cVaR, pcVaR=pcVaR)
-  
-  return(fm.VaR.decomp)
+fmVaRDecomp.tsfm <- function(object, factor.cov = NULL, p = 0.05,
+                             type = c("np", "normal"),
+                             use = "pairwise.complete.obs", ...) {
+  fm <- extract_fm_components(object, factor.cov = factor.cov, use = use)
+  .fmVaRDecomp_impl(fm, object, p = p, type = type, ...)
 }
 
 #' @rdname fmVaRDecomp
 #' @method fmVaRDecomp ffm
 #' @export
 
-fmVaRDecomp.ffm <- function(object, factor.cov, p=0.05, type=c("np","normal"), 
-                            use="pairwise.complete.obs", ...) {
-  # set default for type
-  type = type[1]
-  if (!(type %in% c("np","normal"))) {
+fmVaRDecomp.ffm <- function(object, factor.cov = NULL, p = 0.05,
+                            type = c("np", "normal"),
+                            use = "pairwise.complete.obs", ...) {
+  fm <- extract_fm_components(object, factor.cov = factor.cov)
+  .fmVaRDecomp_impl(fm, object, p = p, type = type, ...)
+}
+
+# Shared implementation for fmVaRDecomp
+.fmVaRDecomp_impl <- function(fm, object, p = 0.05,
+                              type = c("np", "normal"), ...) {
+  type <- type[1]
+  if (!(type %in% c("np", "normal"))) {
     stop("Invalid args: type must be 'np' or 'normal' ")
   }
-  
-  beta.star <- make_beta_star(object$beta, sqrt(object$resid.var))
-  
-  # factor returns and residuals data
-  factors.xts <- object$factor.returns
-  resid.xts <- normalize_fm_residuals(residuals(object), sqrt(object$resid.var))
-  
-  if (type=="normal") {
-    # get cov(F): K x K
-    if (missing(factor.cov)) {
-      factor.cov <- object$factor.cov
-    } else {
-      if (!identical(dim(factor.cov), dim(object$factor.cov))) {
-        stop("Dimensions of user specified factor covariance matrix are not 
-             compatible with the number of factors in the fitFfm object")
-      }
-    }
-    factor.star.cov <- make_factor_star_cov(factor.cov)
-    # factor expected returns
-    MU <- c(colMeans(factors.xts, na.rm=TRUE), 0)
-    # SIGMA*Beta to compute normal mVaR
-    SIGB <-  beta.star %*% factor.star.cov
+
+  beta.star <- make_beta_star(fm$beta, fm$resid.sd)
+  factors.xts <- fm$factors.xts
+  resid.xts <- normalize_fm_residuals(residuals(object), fm$resid.sd)
+
+  if (type == "normal") {
+    factor.star.cov <- make_factor_star_cov(fm$factor.cov)
+    MU <- c(colMeans(factors.xts, na.rm = TRUE), 0)
+    names(MU) <- colnames(beta.star)
+    SIGB <- beta.star %*% factor.star.cov
   }
-  
-  # initialize lists and matrices
-  N <- length(object$asset.names)
-  K <- length(object$factor.names)
+
+  N <- length(fm$asset.names)
+  K <- fm$K
   VaR.fm <- rep(NA, N)
   idx.exceed <- list()
   n.exceed <- rep(NA, N)
-  names(VaR.fm) = names(n.exceed) = object$asset.names
-  mVaR <- matrix(NA, N, K+1)
-  cVaR <- matrix(NA, N, K+1)
-  pcVaR <- matrix(NA, N, K+1)
-  rownames(mVaR)=rownames(cVaR)=rownames(pcVaR)=object$asset.names
-  colnames(mVaR)=colnames(cVaR)=colnames(pcVaR)=c(object$factor.names, "Residuals")
-  
-  for (i in object$asset.names) {
-    # return data for asset i
-    subrows <- which(object$data[[object$asset.var]]==i)
-    R.xts <- xts::as.xts(object$data[subrows,object$ret.var], 
-                    as.Date(object$data[subrows,object$date.var]))
-    
-    if (type=="np") {
-      # get VaR for asset i
-      VaR.fm[i] <- quantile(R.xts, probs=p, na.rm=TRUE, ...)
-      
-      # get F.star data object
-      time(factors.xts) <- time(resid.xts[,i])
-      factor.star <- merge(factors.xts, resid.xts[,i])
-      colnames(factor.star)[dim(factor.star)[2]] <- "Residuals"
-      
-      # epsilon is apprx. using Silverman's rule of thumb (bandwidth selection)
-      # the constant 2.575 corresponds to a triangular kernel 
-      eps <- 2.575*sd(R.xts, na.rm =TRUE) * (nrow(R.xts)^(-1/5))
-      
-      # compute marginal VaR as expected value of factor returns, such that the
-      # asset return was incident in the triangular kernel region peaked at the 
-      # VaR value and bandwidth = epsilon.
+  names(VaR.fm) <- names(n.exceed) <- fm$asset.names
+  mVaR <- matrix(NA, N, K + 1)
+  cVaR <- matrix(NA, N, K + 1)
+  pcVaR <- matrix(NA, N, K + 1)
+  rownames(mVaR) <- rownames(cVaR) <- rownames(pcVaR) <- fm$asset.names
+  colnames(mVaR) <- colnames(cVaR) <- colnames(pcVaR) <- c(fm$factor.names, "Residuals")
+
+  for (i in fm$asset.names) {
+    R.xts <- fm$get_R(i)
+
+    if (type == "np") {
+      VaR.fm[i] <- quantile(R.xts, probs = p, na.rm = TRUE, ...)
+
+      factor.star <- merge(factors.xts, resid.xts[, i])
+      colnames(factor.star)[ncol(factor.star)] <- "Residuals"
+
+      # Silverman's rule bandwidth (triangular kernel, constant 2.575)
+      eps <- 2.575 * sd(R.xts, na.rm = TRUE) * (nrow(R.xts)^(-1/5))
+
       k.weight <- as.vector(1 - abs(R.xts - VaR.fm[i]) / eps)
-      k.weight[k.weight<0] <- 0
-      mVaR[i,] <- colMeans(factor.star*k.weight, na.rm =TRUE)
-      
-    } else if (type=="normal")  {
-      # get VaR for asset i
-      VaR.fm[i] <- beta.star[i,] %*% MU + 
-        sqrt(beta.star[i,,drop=F] %*% factor.star.cov %*% t(beta.star[i,,drop=F]))*qnorm(p)
-      
-      # compute marginal VaR
-      mVaR[i,] <- t(MU) + SIGB[i,] * qnorm(p)/sd(R.xts, na.rm=TRUE)
+      k.weight[k.weight < 0] <- 0
+      mVaR[i, ] <- colMeans(factor.star * k.weight, na.rm = TRUE)
+
+    } else if (type == "normal") {
+      VaR.fm[i] <- beta.star[i, ] %*% MU +
+        sqrt(beta.star[i, , drop = FALSE] %*% factor.star.cov %*%
+               t(beta.star[i, , drop = FALSE])) * qnorm(p)
+      mVaR[i, ] <- t(MU) + SIGB[i, ] * qnorm(p) / sd(R.xts, na.rm = TRUE)
     }
-    
-    # index of VaR exceedances
+
     idx.exceed[[i]] <- which(R.xts <= VaR.fm[i])
-    # number of VaR exceedances
     n.exceed[i] <- length(idx.exceed[[i]])
-    
-    # correction factor to ensure that sum(cVaR) = asset VaR
-    cf <- as.numeric( VaR.fm[i] / sum(mVaR[i,]*beta.star[i,], na.rm=TRUE) )
-    
-    # compute marginal, component and percentage contributions to VaR
-    # each of these have dimensions: N x (K+1)
-    mVaR[i,] <- cf * mVaR[i,]
-    cVaR[i,] <- mVaR[i,] * beta.star[i,]
-    pcVaR[i,] <- 100* cVaR[i,] / VaR.fm[i]
+
+    cf <- as.numeric(VaR.fm[i] / sum(mVaR[i, ] * beta.star[i, ], na.rm = TRUE))
+    mVaR[i, ] <- cf * mVaR[i, ]
+    cVaR[i, ] <- mVaR[i, ] * beta.star[i, ]
+    pcVaR[i, ] <- 100 * cVaR[i, ] / VaR.fm[i]
   }
-  
-  fm.VaR.decomp <- list(VaR.fm=VaR.fm, n.exceed=n.exceed, idx.exceed=idx.exceed, 
-                        mVaR=mVaR, cVaR=cVaR, pcVaR=pcVaR)
-  
-  return(fm.VaR.decomp)
+
+  list(VaR.fm = VaR.fm, n.exceed = n.exceed, idx.exceed = idx.exceed,
+       mVaR = mVaR, cVaR = cVaR, pcVaR = pcVaR)
 }

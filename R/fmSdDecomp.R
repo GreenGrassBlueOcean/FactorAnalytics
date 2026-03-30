@@ -96,71 +96,33 @@ fmSdDecomp <- function(object, ...){
 #' @method fmSdDecomp tsfm
 #' @export
 
-fmSdDecomp.tsfm <- function(object, factor.cov, 
-                            use="pairwise.complete.obs", ...) {
-  
-  beta.star <- make_beta_star(object$beta, object$resid.sd)
-  
-  # get cov(F): K x K
-  factor <- as.matrix(object$data[, object$factor.names])
-  if (missing(factor.cov)) {
-    factor.cov = cov(factor, use=use, ...) 
-  } else {
-    if (!identical(dim(factor.cov), as.integer(c(ncol(factor), ncol(factor))))) {
-      stop("Dimensions of user specified factor covariance matrix are not 
-           compatible with the number of factors in the fitTsfm object")
-    }
-  }
-  
-  factor.star.cov <- make_factor_star_cov(factor.cov)
-  
-  # compute factor model sd; a vector of length N
-  Sd.fm <- sqrt(rowSums(beta.star %*% factor.star.cov * beta.star))
-  
-  # compute marginal, component and percentage contributions to sd
-  # each of these have dimensions: N x (K+1)
-  mSd <- (t(factor.star.cov %*% t(beta.star)))/Sd.fm 
-  cSd <- mSd * beta.star 
-  pcSd = 100* cSd/Sd.fm 
-  
-  fm.sd.decomp <- list(Sd.fm=Sd.fm, mSd=mSd, cSd=cSd, pcSd=pcSd)
-  
-  return(fm.sd.decomp)
+fmSdDecomp.tsfm <- function(object, factor.cov = NULL,
+                            use = "pairwise.complete.obs", ...) {
+  fm <- extract_fm_components(object, factor.cov = factor.cov, use = use)
+  .fmSdDecomp_impl(fm)
 }
 
 #' @rdname fmSdDecomp
 #' @method fmSdDecomp ffm
 #' @export
 
-fmSdDecomp.ffm <- function(object, factor.cov, ...) {
-  
-  # NB: make_beta_star zeros NAs; the old inline code here did NOT zero NAs
-  # in the ffm method (all other methods did). This fixes the inconsistency.
-  beta.star <- make_beta_star(object$beta, sqrt(object$resid.var))
-  
-  # get cov(F): K x K
-  if (missing(factor.cov)) {
-    factor.cov = object$factor.cov
-  } else {
-    if (!identical(dim(factor.cov), dim(object$factor.cov))) {
-      stop("Dimensions of user specified factor covariance matrix are not 
-           compatible with the number of factors (including dummies) in the 
-           fitFfm object")
-    }
-  }
-  
-  factor.star.cov <- make_factor_star_cov(factor.cov)
-  
-  # compute factor model sd; a vector of length N
+fmSdDecomp.ffm <- function(object, factor.cov = NULL, ...) {
+  fm <- extract_fm_components(object, factor.cov = factor.cov)
+  .fmSdDecomp_impl(fm)
+}
+
+# Shared implementation for fmSdDecomp
+.fmSdDecomp_impl <- function(fm) {
+  beta.star <- make_beta_star(fm$beta, fm$resid.sd)
+  factor.star.cov <- make_factor_star_cov(fm$factor.cov)
+
+  # Factor model SD; length-N vector
   Sd.fm <- sqrt(rowSums(beta.star %*% factor.star.cov * beta.star))
-  
-  # compute marginal, component and percentage contributions to sd
-  # each of these have dimensions: N x (K+1)
-  mSd <- (t(factor.star.cov %*% t(beta.star)))/Sd.fm 
-  cSd <- mSd * beta.star 
-  pcSd = 100* cSd/Sd.fm 
-  
-  fm.sd.decomp <- list(Sd.fm=Sd.fm, mSd=mSd, cSd=cSd, pcSd=pcSd)
-  
-  return(fm.sd.decomp)
+
+  # Marginal, component and percentage contributions; N x (K+1)
+  mSd <- (t(factor.star.cov %*% t(beta.star))) / Sd.fm
+  cSd <- mSd * beta.star
+  pcSd <- 100 * cSd / Sd.fm
+
+  list(Sd.fm = Sd.fm, mSd = mSd, cSd = cSd, pcSd = pcSd)
 }

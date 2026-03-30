@@ -10,7 +10,7 @@ fmEsDecomp(object, ...)
 
 \method{fmEsDecomp}{tsfm}(
   object,
-  factor.cov,
+  factor.cov = NULL,
   p = 0.05,
   type = c("np", "normal"),
   use = "pairwise.complete.obs",
@@ -19,7 +19,7 @@ fmEsDecomp(object, ...)
 
 \method{fmEsDecomp}{ffm}(
   object,
-  factor.cov,
+  factor.cov = NULL,
   p = 0.05,
   type = c("np", "normal"),
   use = "pairwise.complete.obs",

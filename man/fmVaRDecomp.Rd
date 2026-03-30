@@ -10,7 +10,7 @@ fmVaRDecomp(object, ...)
 
 \method{fmVaRDecomp}{tsfm}(
   object,
-  factor.cov,
+  factor.cov = NULL,
   p = 0.05,
   type = c("np", "normal"),
   use = "pairwise.complete.obs",
@@ -19,7 +19,7 @@ fmVaRDecomp(object, ...)
 
 \method{fmVaRDecomp}{ffm}(
   object,
-  factor.cov,
+  factor.cov = NULL,
   p = 0.05,
   type = c("np", "normal"),
   use = "pairwise.complete.obs",
