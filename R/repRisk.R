@@ -5,7 +5,6 @@
 #' return of a portfolio based on Euler's theorem, given the fitted factor model.
 #'
 #' @importFrom lattice barchart
-#' @importFrom data.table melt as.data.table
 #' @importFrom methods is
 #'
 #' @param object fit object of class \code{tsfm}, or \code{ffm}.
@@ -122,59 +121,30 @@
 
 
 repRisk <- function(object, ...) {
-
-  # check input object validity
-
-  if(inherits(object, "list"))
-  {
-    for(i in 1: length(object))
-    {
+  if (inherits(object, "list")) {
+    for (i in seq_along(object)) {
       if (!inherits(object[[i]], c("tsfm", "ffm")))
-        stop("Invalid argument: Object should be of class 'tsfm'  or 'ffm'.")
+        stop("Invalid argument: Object should be of class 'tsfm' or 'ffm'.")
     }
     UseMethod("repRisk", object[[1]])
-  }
-
-  else
-  {
+  } else {
     if (!inherits(object, c("tsfm", "ffm")))
-      stop("Invalid argument: Object should be of class 'tsfm'  or 'ffm'.")
+      stop("Invalid argument: Object should be of class 'tsfm' or 'ffm'.")
     UseMethod("repRisk")
   }
-
-
 }
-# #' @rdname repRisk
-# #' @method repRisk list
-# #' @importFrom utils head
-# #' @export
-#
-# repRisk.list <- function(object, weights = NULL, risk = c("Sd", "VaR", "ES"),
-#                          decomp = c('FPCR','FCR','FMCR' ), digits = NULL, invert = FALSE,
-#                          nrowPrint = 20, p=0.05, type=c("np","normal"), use="pairwise.complete.obs",
-#                          sliceby = c('factor', 'asset'), isPrint = TRUE, isPlot = FALSE, layout =NULL,
-#                          portfolio.only = FALSE, ...) {
-#
-#   riskReport = function(object,weight, risk,
-#                         decomp, digits,invert,
-#                         nrowPrint, p, type, use,
-#                         sliceby, isPrint, isPlot, layout,
-#                         portfolio.only)
-#   {
-#     #return(object$r2)
-#     if (!inherits(object, c("tsfm", "ffm")))
-#       stop("Invalid argument: Object should be of class 'tsfm'  or 'ffm'.")
-#   UseMethod("repRisk")
-#   }
-#   output.list<- lapply(X = 1:length(object), FUN = function(X){ riskReport(object[[X]],weight, risk,
-#                                                                            decomp, digits,invert,
-#                                                                            nrowPrint, p, type, use,
-#                                                                            sliceby, isPrint, isPlot, layout,
-#                                                                            portfolio.only)})
-#
-# }
-#
-#
+
+
+# Slot-name lookup: maps risk type to decomposition slot names
+.risk_slots <- list(
+  Sd  = list(port_risk = "portSd",  asset_risk = "Sd.fm",
+             m = "mSd",  c = "cSd",  pc = "pcSd"),
+  VaR = list(port_risk = "portVaR", asset_risk = "VaR.fm",
+             m = "mVaR", c = "cVaR", pc = "pcVaR"),
+  ES  = list(port_risk = "portES",  asset_risk = "ES.fm",
+             m = "mES",  c = "cES",  pc = "pcES")
+)
+
 
 #' @rdname repRisk
 #' @method repRisk tsfm
@@ -182,245 +152,20 @@ repRisk <- function(object, ...) {
 #' @export
 
 repRisk.tsfm <- function(object, weights = NULL, risk = c("Sd", "VaR", "ES"),
-                         decomp = c('FPCR','FCR','FMCR' ), digits = NULL, invert = FALSE,
-                         nrowPrint = 20, p=0.05, type=c("np","normal"), use="pairwise.complete.obs",
-                         sliceby = c('factor', 'asset'), isPrint = TRUE, isPlot = FALSE, layout =NULL,
-                         stripText.cex =1,axis.cex=1,portfolio.only = FALSE, ...) {
-
-  #   if(inherits(object, "list"))
-  #   {
-  #     output.list<- lapply(X = 1:length(object), FUN = function(X){ riskReport(object[[X]])})
-  #   }
-  #   riskReport = function(object)
-  #   {
-  #     return(object$r2)
-  #   }
-
-  # set default for type
-  type = type[1]
-  sliceby = sliceby[1]
-
-  if(!portfolio.only){
-    risk = risk[1]
-  }
-  decomp = decomp[1]
-
-  if (!(type %in% c("np","normal"))) {
-    stop("Invalid args: type must be 'np' or 'normal' ")
-  }
-
-  if (!prod(risk %in% c("Sd", "VaR", "ES"))) {
-    stop("Invalid args: risk must be 'Sd', 'VaR' or 'ES' ")
-  }
-
-  if (!prod(decomp %in% c('FPCR','FCR','FMCR' ))) {
-    stop("Invalid args: decomp must be  'FMCR', 'FCR' or 'FPCR' ")
-  }
-
-  if(!portfolio.only){
-    if(length(which(risk == "Sd"))){
-      port.Sd = riskDecomp(object, weights = weights,risk = "Sd", ... )
-      asset.Sd = riskDecomp(object,risk = "Sd", portDecomp =FALSE, ... )
-
-      if(decomp == "FMCR"){
-        port = port.Sd$mSd
-        asset = asset.Sd$mSd
-        result = rbind(port, asset)
-        rownames(result)[1] = 'Portfolio'
-      } else if(decomp == "FCR"){
-        portRM = port.Sd$portSd
-        assetRM = asset.Sd$Sd.fm
-        resultRM = c(portRM, assetRM)
-
-        port = port.Sd$cSd
-        asset = asset.Sd$cSd
-        result = cbind(resultRM,rbind(port, asset))
-        rownames(result)[1] = 'Portfolio'
-        colnames(result)[1] = 'RM'
-      } else if(decomp == "FPCR"){
-        port = port.Sd$pcSd
-        asset = asset.Sd$pcSd
-        result = rbind(port, asset)
-        rownames(result)[1] = 'Portfolio'
-        result = cbind(rowSums(result), result)
-        colnames(result)[1] = 'Total'
-      }
-
-    } else if(length(which(risk == "VaR"))){
-      port.VaR = riskDecomp(object, risk = "VaR", weights = weights, p = p, type = type, invert = invert, ... )
-      asset.VaR = riskDecomp(object, p = p, type = type, invert = invert, risk = "VaR", portDecomp =FALSE, ... )
-
-      if(decomp == "FMCR"){
-        port = port.VaR$mVaR
-        asset = asset.VaR$mVaR
-        result = rbind(port, asset)
-        rownames(result)[1] = 'Portfolio'
-      } else if(decomp == "FCR"){
-        portRM = port.VaR$portVaR
-        assetRM = asset.VaR$VaR.fm
-        resultRM = c(portRM, assetRM)
-
-        port = port.VaR$cVaR
-        asset = asset.VaR$cVaR
-        result = cbind(resultRM,rbind(port, asset))
-        rownames(result)[1] = 'Portfolio'
-        colnames(result)[1] = 'RM'
-      } else if(decomp == "FPCR"){
-        port = port.VaR$pcVaR
-        asset = asset.VaR$pcVaR
-        result = rbind(port, asset)
-        rownames(result)[1] = 'Portfolio'
-        result = cbind(rowSums(result), result)
-        colnames(result)[1] = 'Total'
-      }
-
-    } else if(length(which(risk == "ES"))){
-      port.Es = riskDecomp(object, risk = "ES", weights = weights, p = p, type = type, invert = invert, ... )
-      asset.Es = riskDecomp(object, p = p, type = type, invert = invert,risk = "ES", portDecomp =FALSE, ... )
-
-      if(decomp == "FMCR"){
-        port = port.Es$mES
-        asset = asset.Es$mES
-        result = rbind(port, asset)
-        rownames(result)[1] = 'Portfolio'
-      } else if(decomp == "FCR"){
-        portRM = port.Es$portES
-        assetRM = asset.Es$ES.fm
-        resultRM = c(portRM, assetRM)
-
-        port = port.Es$cES
-        asset = asset.Es$cES
-        result = cbind(resultRM,rbind(port, asset))
-        rownames(result)[1] = 'Portfolio'
-        colnames(result)[1] = 'RM'
-      } else if(decomp == "FPCR"){
-        port = port.Es$pcES
-        asset = asset.Es$pcES
-        result = rbind(port, asset)
-        rownames(result)[1] = 'Portfolio'
-        result = cbind(rowSums(result), result)
-        colnames(result)[1] = 'Total'
-      }
-
-    }
-
-    if(isPlot){
-      if(decomp == "FCR"){
-        result = result[,-1]
-      }else if(decomp == "FPCR"){
-        result = result[,-1]
-      }
-
-      if(sliceby == 'factor'){
-        result = head(result, nrowPrint)
-
-        if(is.null(layout)){
-          n = ncol(result)
-          l = 3
-          while(n %% l == 1){
-            l = l+1
-          }
-          layout = c(l,1)
-        }
-
-        print(barchart(result[rev(rownames(result)),], groups = FALSE, main = paste(decomp,"of", risk),layout = layout,
-                       scales=list(y=list(cex=axis.cex), x=list(cex=axis.cex)),par.strip.text=list(col="black", cex = stripText.cex),ylab = '', xlab = '', as.table = TRUE))
-
-      }else if(sliceby == 'asset'){
-        result = head(result, nrowPrint)
-        result = t(result)
-
-        if(is.null(layout)){
-          n = ncol(result)
-          l = 3
-          while(n %% l == 1){
-            l = l+1
-          }
-          layout = c(l,1)
-        }
-
-        print(barchart(result[rev(rownames(result)),], groups = FALSE, main = paste(decomp,"of", risk),layout = layout,
-                       scales=list(y=list(cex=axis.cex), x=list(cex=axis.cex)),par.strip.text=list(col="black", cex = stripText.cex),ylab = '', xlab = '', as.table = TRUE))
-      }
-    }
-
-    if(isPrint){
-      if(is.null(digits)){
-        if(decomp == 'FPCR'){
-          digits = 1
-        }else{
-          digits = 3
-        }
-      }
-      result = head(result, nrowPrint)
-      result = round(result, digits)
-
-      output = list(decomp = result)
-      names(output) = paste(risk,decomp,sep = '')
-
-      return(output)
-    }
-  } else{
-    port.Sd = riskDecomp(object, risk = "Sd", weights = weights, ... )
-    port.VaR = riskDecomp(object, risk = "VaR", weights = weights, p = p, type = type, invert = invert, ... )
-    port.Es = riskDecomp(object, risk = "ES", weights = weights, p = p, type = type, invert = invert, ... )
-
-    if(decomp == "FMCR"){
-      Sd = port.Sd$mSd
-      VaR = port.VaR$mVaR
-      Es = port.Es$mES
-      result = rbind(Sd, VaR, Es)
-      rownames(result) = c('Sd','VaR','ES')
-      result = result[risk,]
-    } else if(decomp == "FCR"){
-      SdRM = port.Sd$portSd
-      VaRRM = port.VaR$portVaR
-      EsRM = port.Es$portES
-      resultRM = c(SdRM, VaRRM, EsRM)
-      names(resultRM) = c('Sd','VaR','ES')
-
-      Sd = port.Sd$cSd
-      VaR = port.VaR$cVaR
-      Es = port.Es$cES
-      result = rbind(Sd, VaR, Es)
-      rownames(result) = c('Sd','VaR','ES')
-      result = cbind(resultRM,result)
-      colnames(result)[1] = 'RM'
-      result = result[risk,]
-    } else if(decomp == "FPCR"){
-      Sd = port.Sd$pcSd
-      VaR = port.VaR$pcVaR
-      Es = port.Es$pcES
-      result = rbind(Sd, VaR, Es)
-      rownames(result) = c('Sd','VaR','ES')
-      result = cbind(rowSums(result), result)
-      colnames(result)[1] = 'Total'
-      result = result[risk,]
-    }
-
-    if(isPrint){
-      if(is.null(digits)){
-        if(decomp == 'FPCR'){
-          digits = 1
-        }else{
-          digits = 3
-        }
-      }
-      result = round(result, digits)
-
-      if(type=="normal"){
-        Type = 'Parametric Normal'
-      }else{
-        Type = 'Non-Parametric'
-      }
-      output = list(decomp = result)
-      names(output) = paste('Portfolio',decomp, Type, sep = ' ')
-
-      return(output)
-    }
-
-  }
+                         decomp = c("FPCR", "FCR", "FMCR"), digits = NULL,
+                         invert = FALSE, nrowPrint = 20, p = 0.05,
+                         type = c("np", "normal"),
+                         use = "pairwise.complete.obs",
+                         sliceby = c("factor", "asset"), isPrint = TRUE,
+                         isPlot = FALSE, layout = NULL, stripText.cex = 1,
+                         axis.cex = 1, portfolio.only = FALSE, ...) {
+  .repRisk_impl(object, weights = weights, risk = risk, decomp = decomp,
+                digits = digits, invert = invert, nrowPrint = nrowPrint,
+                p = p, type = type, sliceby = sliceby, isPrint = isPrint,
+                isPlot = isPlot, layout = layout, stripText.cex = stripText.cex,
+                axis.cex = axis.cex, portfolio.only = portfolio.only, ...)
 }
+
 
 #' @rdname repRisk
 #' @method repRisk ffm
@@ -428,333 +173,289 @@ repRisk.tsfm <- function(object, weights = NULL, risk = c("Sd", "VaR", "ES"),
 #' @export
 
 repRisk.ffm <- function(object, weights = NULL, risk = c("Sd", "VaR", "ES"),
-                        decomp = c('FMCR', 'FCR', 'FPCR'), digits = NULL, invert = FALSE,
-                        nrowPrint = 20, p=0.05, type=c("np","normal"),
-                        sliceby = c('factor', 'asset', 'riskType'), isPrint = TRUE, isPlot = FALSE, layout =NULL,
-                        stripText.cex =1,axis.cex=1,portfolio.only = FALSE, ...) {
-  riskReport = function(object,X,mul.port)
-  {
+                        decomp = c("FMCR", "FCR", "FPCR"), digits = NULL,
+                        invert = FALSE, nrowPrint = 20, p = 0.05,
+                        type = c("np", "normal"),
+                        sliceby = c("factor", "asset", "riskType"),
+                        isPrint = TRUE, isPlot = FALSE, layout = NULL,
+                        stripText.cex = 1, axis.cex = 1,
+                        portfolio.only = FALSE, ...) {
+  # Handle list-of-objects (multi-portfolio) input
+  if (inherits(object, "list")) {
+    if (length(weights) != length(object))
+      stop("Error: Number of portfolios and weights do not match")
 
-   if(mul.port) weights = weights[[X]]
-    # set default for type
-    type = type[1]
-    sliceby = sliceby[1]
+    output.list <- lapply(seq_along(object), function(X) {
+      .repRisk_impl(object[[X]], weights = weights[[X]], risk = risk,
+                    decomp = decomp, digits = digits, invert = invert,
+                    nrowPrint = nrowPrint, p = p, type = type,
+                    sliceby = sliceby, isPrint = isPrint, isPlot = FALSE,
+                    layout = layout, stripText.cex = stripText.cex,
+                    axis.cex = axis.cex, portfolio.only = portfolio.only, ...)
+    })
 
-    if(!portfolio.only){
-      risk = risk[1]
-    }
-    decomp = decomp[1]
+    if (isPlot && portfolio.only)
+      .plot_multi_portfolio(output.list, object, risk, decomp, layout,
+                           axis.cex, stripText.cex)
 
-    if (!(type %in% c("np","normal"))) {
-      stop("Invalid args: type must be 'np' or 'normal' ")
-    }
+    return(output.list)
+  }
 
-    if (!prod(risk %in% c("Sd", "VaR", "ES"))) {
-      stop("Invalid args: risk must be 'Sd', 'VaR' or 'ES' ")
-    }
+  # Single-object path
+  .repRisk_impl(object, weights = weights, risk = risk, decomp = decomp,
+                digits = digits, invert = invert, nrowPrint = nrowPrint,
+                p = p, type = type, sliceby = sliceby, isPrint = isPrint,
+                isPlot = isPlot, layout = layout, stripText.cex = stripText.cex,
+                axis.cex = axis.cex, portfolio.only = portfolio.only, ...)
+}
 
-    if (!prod(decomp %in% c( 'FMCR', 'FCR', 'FPCR'))) {
-      stop("Invalid args: decomp must be 'FMCR', 'FCR' or 'FPCR' ")
-    }
 
-    if(!portfolio.only){
-      if(length(which(risk == "Sd"))){
-        port.Sd = riskDecomp(object,risk = "Sd",weights = weights, ... )
-        asset.Sd = riskDecomp(object,risk = "Sd", portDecomp =FALSE, ... )
+# ---------------------------------------------------------------------------
+# Shared implementation for single-object repRisk
+# ---------------------------------------------------------------------------
+.repRisk_impl <- function(object, weights, risk, decomp, digits, invert,
+                          nrowPrint, p, type, sliceby, isPrint, isPlot,
+                          layout, stripText.cex, axis.cex, portfolio.only,
+                          ...) {
+  type <- type[1]
+  sliceby <- sliceby[1]
+  decomp <- decomp[1]
 
-        if(decomp == "FMCR"){
-          port = port.Sd$mSd
-          asset = asset.Sd$mSd
-          result = rbind(port, asset)
-          rownames(result)[1] = 'Portfolio'
-        } else if(decomp == "FCR"){
-          portRM = port.Sd$portSd
-          assetRM = asset.Sd$Sd.fm
-          resultRM = c(portRM, assetRM)
+  if (!(type %in% c("np", "normal")))
+    stop("Invalid args: type must be 'np' or 'normal' ")
+  if (!all(risk %in% c("Sd", "VaR", "ES")))
+    stop("Invalid args: risk must be 'Sd', 'VaR' or 'ES' ")
+  if (!(decomp %in% c("FMCR", "FCR", "FPCR")))
+    stop("Invalid args: decomp must be 'FMCR', 'FCR' or 'FPCR' ")
 
-          port = port.Sd$cSd
-          asset = asset.Sd$cSd
-          result = cbind(resultRM,rbind(port, asset))
-          rownames(result)[1] = 'Portfolio'
-          colnames(result)[1] = 'RM'
-        } else if(decomp == "FPCR"){
-          port = port.Sd$pcSd
-          asset = asset.Sd$pcSd
-          result = rbind(port, asset)
-          rownames(result)[1] = 'Portfolio'
-          result = cbind(rowSums(result), result)
-          colnames(result)[1] = 'Total'
-        }
+  if (!portfolio.only) risk <- risk[1]
 
-      } else if(length(which(risk == "VaR"))){
-        port.VaR = riskDecomp(object, risk = "VaR", weights = weights, p = p, type = type, invert = invert, ... )
-        asset.VaR = riskDecomp(object,risk = "VaR", portDecomp =FALSE,  p = p, type = type, invert = invert, ... )
+  # --- Single-risk path (portfolio + asset decomposition) ---
+  if (!portfolio.only) {
+    slots <- .risk_slots[[risk]]
+    port <- riskDecomp(object, risk = risk, weights = weights,
+                       p = p, type = type, invert = invert, ...)
+    asset <- riskDecomp(object, risk = risk, portDecomp = FALSE,
+                        p = p, type = type, invert = invert, ...)
 
-        if(decomp == "FMCR"){
-          port = port.VaR$mVaR
-          asset = asset.VaR$mVaR
-          result = rbind(port, asset)
-          rownames(result)[1] = 'Portfolio'
-        } else if(decomp == "FCR"){
-          portRM = port.VaR$portVaR
-          assetRM = asset.VaR$VaR.fm
-          resultRM = c(portRM, assetRM)
+    result <- .assemble_result(port, asset, slots, decomp)
 
-          port = port.VaR$cVaR
-          asset = asset.VaR$cVaR
-          result = cbind(resultRM,rbind(port, asset))
-          rownames(result)[1] = 'Portfolio'
-          colnames(result)[1] = 'RM'
-        } else if(decomp == "FPCR"){
-          port = port.VaR$pcVaR
-          asset = asset.VaR$pcVaR
-          result = rbind(port, asset)
-          rownames(result)[1] = 'Portfolio'
-          result = cbind(rowSums(result), result)
-          colnames(result)[1] = 'Total'
-        }
+    if (isPlot)
+      .plot_single_risk(result, decomp, risk, nrowPrint, sliceby,
+                        layout, axis.cex, stripText.cex)
 
-      } else if(length(which(risk == "ES"))){
-        port.Es = riskDecomp(object, risk = "ES", weights = weights, p = p, type = type, invert = invert, ... )
-        asset.Es = riskDecomp(object,risk = "ES", portDecomp =FALSE, p = p, type = type, invert = invert, ... )
-
-        if(decomp == "FMCR"){
-          port = port.Es$mES
-          asset = asset.Es$mES
-          result = rbind(port, asset)
-          rownames(result)[1] = 'Portfolio'
-        } else if(decomp == "FCR"){
-          portRM = port.Es$portES
-          assetRM = asset.Es$ES.fm
-          resultRM = c(portRM, assetRM)
-
-          port = port.Es$cES
-          asset = asset.Es$cES
-          result = cbind(resultRM,rbind(port, asset))
-          rownames(result)[1] = 'Portfolio'
-          colnames(result)[1] = 'RM'
-        } else if(decomp == "FPCR"){
-          port = port.Es$pcES
-          asset = asset.Es$pcES
-          result = rbind(port, asset)
-          rownames(result)[1] = 'Portfolio'
-          result = cbind(rowSums(result), result)
-          colnames(result)[1] = 'Total'
-        }
-
-      }
-
-      if(isPlot){
-        if(decomp == "FCR"){
-          result = result[,-1]
-        }else if(decomp == "FPCR"){
-          result = result[,-1]
-        }
-
-        if(sliceby == 'factor'){
-          result = head(result, nrowPrint)
-
-          if(is.null(layout)){
-            n = ncol(result)
-            l = 3
-            while(n %% l == 1){
-              l = l+1
-            }
-            layout = c(l,1)
-          }
-
-          print(barchart(result[rev(rownames(result)),], groups = FALSE, main = paste(decomp,"of", risk, switch(mul.port, "1" = paste("for port", X), "")),layout = layout,
-                         scales=list(y=list(cex=axis.cex), x=list(cex=axis.cex)),par.strip.text=list(col="black", cex = stripText.cex),ylab = '', xlab = '', as.table = TRUE))
-
-        }else if(sliceby == 'asset'){
-          result = head(result, nrowPrint)
-          result = t(result)
-
-          if(is.null(layout)){
-            n = ncol(result)
-            l = 3
-            while(n %% l == 1){
-              l = l+1
-            }
-            layout = c(l,1)
-          }
-
-          print(barchart(result[rev(rownames(result)),], groups = FALSE, main = paste(decomp,"of", risk, switch(mul.port, "1" = paste("for port", X), "")),layout = layout,
-                         scales=list(y=list(cex=axis.cex), x=list(cex=axis.cex)),par.strip.text=list(col="black", cex = stripText.cex),ylab = '', xlab = '', as.table = TRUE))
-        }
-      }
-
-      if(isPrint){
-        if(is.null(digits)){
-          if(decomp == 'FPCR'){
-            digits = 1
-          }else{
-            digits = 3
-          }
-        }
-        result = head(result, nrowPrint)
-        result = round(result, digits)
-
-        output = list(decomp = result)
-        names(output) = paste(risk,decomp,sep = '')
-
-        return(output)
-      }
-    } else{
-      port.Sd = riskDecomp(object, risk = "Sd", weights = weights, ... )
-      port.VaR = riskDecomp(object, risk ="VaR", weights = weights, p = p, type = type, invert = invert, ... )
-      port.Es = riskDecomp(object,risk ="ES", weights = weights, p = p, type = type, invert = invert, ... )
-
-      if(decomp == "FMCR"){
-        Sd = port.Sd$mSd
-        VaR = port.VaR$mVaR
-        Es = port.Es$mES
-        result = rbind(Sd, VaR, Es)
-        rownames(result) = c('Sd','VaR','ES')
-        result = result[risk,]
-      } else if(decomp == "FCR"){
-        SdRM = port.Sd$portSd
-        VaRRM = port.VaR$portVaR
-        EsRM = port.Es$portES
-        resultRM = c(SdRM, VaRRM, EsRM)
-        names(resultRM) = c('Sd','VaR','ES')
-
-        Sd = port.Sd$cSd
-        VaR = port.VaR$cVaR
-        Es = port.Es$cES
-        result = rbind(Sd, VaR, Es)
-        rownames(result) = c('Sd','VaR','ES')
-        result = cbind(resultRM,result)
-        colnames(result)[1] = 'RM'
-        result = result[risk,]
-      } else if(decomp == "FPCR"){
-        Sd = port.Sd$pcSd
-        VaR = port.VaR$pcVaR
-        Es = port.Es$pcES
-        result = rbind(Sd, VaR, Es)
-        rownames(result) = c('Sd','VaR','ES')
-        result = cbind(rowSums(result), result)
-        colnames(result)[1] = 'Total'
-        result = result[risk,]
-      }
-
-      # Always create output (Bug fix: output was only defined when isPrint=TRUE,
-      # causing 'object not found' in multi-portfolio paths with isPrint=FALSE)
-      output = list(decomp = result)
-
-      if(isPrint){
-        if(is.null(digits)){
-          if(decomp == 'FPCR'){
-            digits = 1
-          }else{
-            digits = 3
-          }
-        }
-        result = round(result, digits)
-
-        if(type=="normal"){
-          Type = 'Parametric Normal'
-        }else{
-          Type = 'Non-Parametric'
-        }
-        output = list(decomp = result)
-        names(output) = paste('Portfolio',decomp, Type, sep = ' ')
-
-      }
-      if(isPlot & !mul.port){
-
-        # single portfolio with multiple risks
-        if(is.matrix(result))
-        {
-          result = output[[1]]
-          result.mat = result[,-1, drop = FALSE]
-          # Bug fix: newdata was never created (melt was commented out).
-          # Use as.data.frame(as.table()) for reliable Var1/Var2 columns.
-          newdata = as.data.frame(as.table(result.mat))
-          colnames(newdata) = c("Var1", "Var2", "value")
-          if(sliceby == "riskType"){
-            print(barchart(value~Var2|Var1, data = newdata,stack = TRUE, origin =0, main = list(paste("Portfolio", decomp, "Comparison" ), cex = axis.cex),layout = layout,
-                           scales=list(y=list(cex=axis.cex), x=list(cex=axis.cex,rot=90)),par.strip.text=list(col="black",font=2, cex = stripText.cex),ylab = '', xlab = '', as.table = TRUE))
-          }else{
-          print(barchart(value~Var1|Var2, data = newdata,stack = TRUE, origin =0,main = list(paste("Portfolio", decomp, "Comparison" ), cex = axis.cex),layout = layout,
-                         scales=list(y=list(cex=axis.cex), x=list(cex=axis.cex)),par.strip.text=list(col="black",font=2, cex = stripText.cex),ylab = '', xlab = '', as.table = TRUE))
-          }
-        }
-        else
-        {
-          result = result[-1]
-          result.mat = matrix(result, ncol =1)
-          rownames(result.mat) = names(result)
-          colnames(result.mat) = risk
-        print(barchart(result.mat,stack = TRUE,groups = FALSE, main = list(paste("Portfolio", risk, "Decomposition- ",decomp ), cex = axis.cex),layout = layout,
-                         horizontal = FALSE, scales=list(y=list(cex=axis.cex), x=list(cex=axis.cex)),par.strip.text=list(col="black",font=2, cex = stripText.cex),ylab = '', xlab = '', as.table = T))
-
-        }
-
-      }
+    if (isPrint) {
+      if (is.null(digits)) digits <- if (decomp == "FPCR") 1 else 3
+      result <- round(head(result, nrowPrint), digits)
+      output <- list(decomp = result)
+      names(output) <- paste0(risk, decomp)
       return(output)
     }
-
+    return(invisible(NULL))
   }
-  if(inherits(object, "list"))
-  {
-    #check for the lenght of weights
-    if(length(weights) != length(object)) stop("Error: Number of portfolios and weights do not match")
-    output.list<- lapply(X = 1:length(object), FUN = function(X){riskReport(object[[X]],X,mul.port = TRUE)})
-    if(isPlot && portfolio.only)
-      {
-        if(length(risk)>1){
-          # Bug 1 fix: original used rep(risk, ) [missing arg] and broken melt()
-          # Extract per-portfolio decomposition matrices and tag with risk type
-          result = unlist(output.list, recursive = FALSE, use.names = FALSE)
-          result.mat = matrix(unlist(result), ncol = length(result))
-          colnames(result.mat) = unlist(lapply(X=1:length(object), function(X) paste("P",X)))
-          # Build factor names from first result's column names
-          factor_nms <- colnames(result[[1]])
-          if (is.null(factor_nms)) factor_nms <- paste0("F", seq_len(nrow(result.mat) / length(risk)))
-          rownames(result.mat) = rep(factor_nms, times = length(risk))
-          # Remove first length(risk) rows (portfolio-level totals)
-          result.mat = result.mat[-c(1:length(risk)),, drop = FALSE]
-          # Reshape using as.data.frame(as.table()) for reliable Var1/Var2 columns
-          newdata = as.data.frame(as.table(result.mat))
-          colnames(newdata) = c("factor", "portfolio", "value")
-          # Risk labels: rows are blocked by risk type (all Sd factors, then all VaR, etc.)
-          n_factors_per_risk <- nrow(result.mat) / length(risk)
-          newdata$risk = factor(rep(rep(risk, each = as.integer(n_factors_per_risk)),
-                                    times = ncol(result.mat)))
 
-          print(barchart(value ~ factor | portfolio * risk, data = newdata,
-                         stack = TRUE, origin = 0,
-                         main = list(paste("Portfolio Risk Comparison- ", decomp),
-                                     cex = axis.cex),
-                         layout = layout,
-                         scales=list(y=list(cex=axis.cex), x=list(cex=axis.cex)),
-                         par.strip.text=list(col="black", font=2, cex = stripText.cex),
-                         ylab = '', xlab = '', as.table = TRUE))
-        }
-        else{
-          # Bug 2 fix: original melt() had wrong id.vars producing missing Var2
-          result.mat = matrix(unlist(output.list), ncol = length(output.list))
-          colnames(result.mat) = unlist(lapply(X=1:length(object), function(X) paste("Portfolio",X)))
-          rownames(result.mat) = names(output.list[[1]][[1]])
-          # Remove Total row
-          result.mat = result.mat[-1,, drop = FALSE]
-          # Reshape using as.data.frame(as.table()) for reliable columns
-          newdata = as.data.frame(as.table(result.mat))
-          colnames(newdata) = c("factor", "portfolio", "value")
+  # --- Portfolio-only path (multi-risk allowed) ---
+  decomps <- lapply(c("Sd", "VaR", "ES"), function(r) {
+    riskDecomp(object, risk = r, weights = weights,
+               p = p, type = type, invert = invert, ...)
+  })
+  names(decomps) <- c("Sd", "VaR", "ES")
 
-          print(barchart(value ~ factor | portfolio, data = newdata,
-                         stack = TRUE, origin = 0,
-                         main = list(paste("Portfolio Risk Comparison- ", risk, decomp),
-                                     cex = axis.cex),
-                         layout = layout,
-                         scales=list(y=list(cex=axis.cex), x=list(cex=axis.cex)),
-                         par.strip.text=list(col="black",font=2, cex = stripText.cex),
-                         ylab = '', xlab = '', as.table = TRUE))
-       }}
+  result <- .assemble_portfolio_only(decomps, risk, decomp)
+
+  if (isPrint) {
+    if (is.null(digits)) digits <- if (decomp == "FPCR") 1 else 3
+    result <- round(result, digits)
+    Type <- if (type == "normal") "Parametric Normal" else "Non-Parametric"
+    output <- list(decomp = result)
+    names(output) <- paste("Portfolio", decomp, Type)
+  } else {
+    output <- list(decomp = result)
   }
-  else
-    output.list<- riskReport(object,1, mul.port = FALSE)
-  return(output.list)
 
+  if (isPlot)
+    .plot_portfolio_only(result, risk, decomp, sliceby,
+                         layout, axis.cex, stripText.cex)
+
+  return(output)
+}
+
+
+# ---------------------------------------------------------------------------
+# Result assembly helpers
+# ---------------------------------------------------------------------------
+.assemble_result <- function(port, asset, slots, decomp) {
+  if (decomp == "FMCR") {
+    result <- rbind(port[[slots$m]], asset[[slots$m]])
+    rownames(result)[1] <- "Portfolio"
+  } else if (decomp == "FCR") {
+    rm_col <- c(port[[slots$port_risk]], asset[[slots$asset_risk]])
+    result <- cbind(RM = rm_col, rbind(port[[slots$c]], asset[[slots$c]]))
+    rownames(result)[1] <- "Portfolio"
+  } else {
+    result <- rbind(port[[slots$pc]], asset[[slots$pc]])
+    rownames(result)[1] <- "Portfolio"
+    result <- cbind(Total = rowSums(result), result)
+  }
+  result
+}
+
+.assemble_portfolio_only <- function(decomps, risk, decomp) {
+  if (decomp == "FMCR") {
+    rows <- lapply(c("Sd", "VaR", "ES"), function(r)
+      decomps[[r]][[.risk_slots[[r]]$m]])
+    result <- do.call(rbind, rows)
+    rownames(result) <- c("Sd", "VaR", "ES")
+    result <- result[risk, , drop = FALSE]
+  } else if (decomp == "FCR") {
+    rm_vals <- vapply(c("Sd", "VaR", "ES"), function(r)
+      decomps[[r]][[.risk_slots[[r]]$port_risk]], numeric(1))
+    names(rm_vals) <- c("Sd", "VaR", "ES")
+    rows <- lapply(c("Sd", "VaR", "ES"), function(r)
+      decomps[[r]][[.risk_slots[[r]]$c]])
+    result <- do.call(rbind, rows)
+    rownames(result) <- c("Sd", "VaR", "ES")
+    result <- cbind(RM = rm_vals, result)
+    result <- result[risk, , drop = FALSE]
+  } else {
+    rows <- lapply(c("Sd", "VaR", "ES"), function(r)
+      decomps[[r]][[.risk_slots[[r]]$pc]])
+    result <- do.call(rbind, rows)
+    rownames(result) <- c("Sd", "VaR", "ES")
+    result <- cbind(Total = rowSums(result), result)
+    result <- result[risk, , drop = FALSE]
+  }
+  result
+}
+
+
+# ---------------------------------------------------------------------------
+# Plotting helpers
+# ---------------------------------------------------------------------------
+.auto_layout <- function(n) {
+  l <- 3
+  while (n %% l == 1) l <- l + 1
+  c(l, 1)
+}
+
+.plot_single_risk <- function(result, decomp, risk, nrowPrint, sliceby,
+                              layout, axis.cex, stripText.cex) {
+  # Strip RM/Total column for plotting
+  if (decomp %in% c("FCR", "FPCR")) result <- result[, -1, drop = FALSE]
+  result <- head(result, nrowPrint)
+
+  if (sliceby == "asset") result <- t(result)
+  if (is.null(layout)) layout <- .auto_layout(ncol(result))
+
+  print(barchart(result[rev(rownames(result)), , drop = FALSE], groups = FALSE,
+                 main = paste(decomp, "of", risk), layout = layout,
+                 scales = list(y = list(cex = axis.cex),
+                               x = list(cex = axis.cex)),
+                 par.strip.text = list(col = "black", cex = stripText.cex),
+                 ylab = "", xlab = "", as.table = TRUE))
+}
+
+.plot_portfolio_only <- function(result, risk, decomp, sliceby,
+                                layout, axis.cex, stripText.cex) {
+  if (is.matrix(result) && nrow(result) > 1) {
+    # Multi-risk matrix: strip RM/Total, reshape
+    plot_mat <- if (decomp %in% c("FCR", "FPCR")) result[, -1, drop = FALSE]
+                else result
+    newdata <- as.data.frame(as.table(plot_mat))
+    colnames(newdata) <- c("Var1", "Var2", "value")
+    if (sliceby == "riskType") {
+      print(barchart(value ~ Var2 | Var1, data = newdata, stack = TRUE,
+                     origin = 0,
+                     main = list(paste("Portfolio", decomp, "Comparison"),
+                                 cex = axis.cex),
+                     layout = layout,
+                     scales = list(y = list(cex = axis.cex),
+                                   x = list(cex = axis.cex, rot = 90)),
+                     par.strip.text = list(col = "black", font = 2,
+                                           cex = stripText.cex),
+                     ylab = "", xlab = "", as.table = TRUE))
+    } else {
+      print(barchart(value ~ Var1 | Var2, data = newdata, stack = TRUE,
+                     origin = 0,
+                     main = list(paste("Portfolio", decomp, "Comparison"),
+                                 cex = axis.cex),
+                     layout = layout,
+                     scales = list(y = list(cex = axis.cex),
+                                   x = list(cex = axis.cex)),
+                     par.strip.text = list(col = "black", font = 2,
+                                           cex = stripText.cex),
+                     ylab = "", xlab = "", as.table = TRUE))
+    }
+  } else {
+    # Single-risk vector: simple barchart
+    if (is.matrix(result)) result <- result[1, ]
+    plot_result <- result[names(result) != "RM" & names(result) != "Total"]
+    result.mat <- matrix(plot_result, ncol = 1)
+    rownames(result.mat) <- names(plot_result)
+    colnames(result.mat) <- risk[1]
+    print(barchart(result.mat, stack = TRUE, groups = FALSE,
+                   main = list(paste("Portfolio", risk[1], "Decomposition-", decomp),
+                               cex = axis.cex),
+                   layout = layout, horizontal = FALSE,
+                   scales = list(y = list(cex = axis.cex),
+                                 x = list(cex = axis.cex)),
+                   par.strip.text = list(col = "black", font = 2,
+                                         cex = stripText.cex),
+                   ylab = "", xlab = "", as.table = TRUE))
+  }
+}
+
+.plot_multi_portfolio <- function(output.list, object, risk, decomp, layout,
+                                 axis.cex, stripText.cex) {
+  decomp <- decomp[1]
+  if (length(risk) > 1) {
+    # Multi-risk: stack results from all portfolios
+    result <- unlist(output.list, recursive = FALSE, use.names = FALSE)
+    result.mat <- matrix(unlist(result), ncol = length(result))
+    factor_nms <- colnames(result[[1]])
+    if (is.null(factor_nms))
+      factor_nms <- paste0("F", seq_len(nrow(result.mat) / length(risk)))
+    rownames(result.mat) <- rep(factor_nms, times = length(risk))
+    colnames(result.mat) <- paste0("P", seq_along(object))
+    # Remove portfolio-level total rows
+    result.mat <- result.mat[-seq_len(length(risk)), , drop = FALSE]
+
+    newdata <- as.data.frame(as.table(result.mat))
+    colnames(newdata) <- c("factor", "portfolio", "value")
+    n_per_risk <- as.integer(nrow(result.mat) / length(risk))
+    newdata$risk <- factor(rep(rep(risk, each = n_per_risk),
+                               times = ncol(result.mat)))
+
+    print(barchart(value ~ factor | portfolio * risk, data = newdata,
+                   stack = TRUE, origin = 0,
+                   main = list(paste("Portfolio Risk Comparison-", decomp),
+                               cex = axis.cex),
+                   layout = layout,
+                   scales = list(y = list(cex = axis.cex),
+                                 x = list(cex = axis.cex)),
+                   par.strip.text = list(col = "black", font = 2,
+                                         cex = stripText.cex),
+                   ylab = "", xlab = "", as.table = TRUE))
+  } else {
+    # Single-risk: simple comparison across portfolios
+    result.mat <- matrix(unlist(output.list), ncol = length(output.list))
+    colnames(result.mat) <- paste("Portfolio", seq_along(object))
+    rownames(result.mat) <- names(output.list[[1]][[1]])
+    # Remove Total row
+    result.mat <- result.mat[-1, , drop = FALSE]
+
+    newdata <- as.data.frame(as.table(result.mat))
+    colnames(newdata) <- c("factor", "portfolio", "value")
+
+    print(barchart(value ~ factor | portfolio, data = newdata,
+                   stack = TRUE, origin = 0,
+                   main = list(paste("Portfolio Risk Comparison-", risk, decomp),
+                               cex = axis.cex),
+                   layout = layout,
+                   scales = list(y = list(cex = axis.cex),
+                                 x = list(cex = axis.cex)),
+                   par.strip.text = list(col = "black", font = 2,
+                                         cex = stripText.cex),
+                   ylab = "", xlab = "", as.table = TRUE))
+  }
 }

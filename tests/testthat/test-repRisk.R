@@ -121,3 +121,53 @@ test_that("Bug 2 fix: multi-portfolio + single-risk + isPlot no error", {
                 isPrint = FALSE, isPlot = TRUE)
   )
 })
+
+# ---------- Extended structure checks: decomp × risk combinations ----------
+
+test_that("FMCR/FCR/FPCR × Sd produce correct result structure", {
+  fmcr <- repRisk(fit_ffm_rr, weights = wts_ffm, risk = "Sd",
+                  decomp = "FMCR")[[1]]
+  fcr  <- repRisk(fit_ffm_rr, weights = wts_ffm, risk = "Sd",
+                  decomp = "FCR")[[1]]
+  fpcr <- repRisk(fit_ffm_rr, weights = wts_ffm, risk = "Sd",
+                  decomp = "FPCR")[[1]]
+  expect_equal(rownames(fmcr)[1], "Portfolio")
+  # FCR has an extra RM column
+  expect_equal(colnames(fcr)[1], "RM")
+  expect_equal(ncol(fcr), ncol(fmcr) + 1)
+  # FPCR has a Total column
+  expect_equal(colnames(fpcr)[1], "Total")
+})
+
+test_that("VaR and ES decomp return matrices with correct row names", {
+  var_res <- repRisk(fit_tsfm_rr, weights = wts6, risk = "VaR",
+                     decomp = "FMCR")[[1]]
+  es_res  <- repRisk(fit_tsfm_rr, weights = wts6, risk = "ES",
+                     decomp = "FMCR")[[1]]
+  expect_equal(rownames(var_res)[1], "Portfolio")
+  expect_equal(rownames(es_res)[1], "Portfolio")
+  expect_true(nrow(var_res) > 1)
+  expect_true(nrow(es_res) > 1)
+})
+
+test_that("portfolio.only=TRUE, single risk, sliceby='factor' isPlot works", {
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  expect_no_error(
+    repRisk(fit_ffm_rr, weights = wts_ffm,
+            risk = "Sd", decomp = "FPCR",
+            portfolio.only = TRUE,
+            isPrint = FALSE, isPlot = TRUE)
+  )
+})
+
+test_that("single risk isPlot sliceby='asset' works", {
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  expect_no_error(
+    repRisk(fit_ffm_rr, weights = wts_ffm,
+            risk = "Sd", decomp = "FPCR",
+            isPrint = FALSE, isPlot = TRUE, sliceby = "asset",
+            nrowPrint = 5)
+  )
+})
