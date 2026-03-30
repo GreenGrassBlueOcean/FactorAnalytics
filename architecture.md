@@ -2,7 +2,7 @@
 
 > Reference document for the GreenGrassBlueOcean refactoring effort.
 > Generated from `braverock/FactorAnalytics` v2.4.2 (2024-12-12).
-> Updated 2026-03-30 with Phases 0–6 findings.
+> Updated 2026-03-30 with Phases 0–8 findings.
 
 ---
 
@@ -29,40 +29,44 @@ This is the primary pipeline and the focus of the refactoring. It is already par
 ### 2.1 Call Graph
 
 ```
-fitFfm()                                    [R/fitFfm.R, line 218]
+fitFfm()                                    [R/fitFfm.R, line 222]
   │
-  ├─► specFfm()                             [R/fitFfmDT.R, line 32]
+  ├─► specFfm()                             [R/fitFfmDT.R, line 175]
   │     Creates ffmSpec object; converts data to data.table;
   │     sets keys (asset, date); classifies exposures (numeric vs char);
   │     detects model type (style-only / sector / MSCI).
   │
-  ├─► lagExposures()                        [R/fitFfmDT.R, line 134]
+  ├─► lagExposures()                        [R/fitFfmDT.R, line 286]
   │     Lags all exposure columns by one period per asset using
   │     data.table::shift(). Drops first observation per asset.
   │
-  ├─► standardizeExposures()                [R/fitFfmDT.R, line 182]
+  ├─► standardizeExposures()                [R/fitFfmDT.R, line 334]
   │     Z-scores numeric exposures. Two paths:
   │     • CrossSection: grouped by date, standard z-score
   │     • TimeSeries: EWMA variance per asset (vectorized via stats::filter)
   │
-  ├─► fitFfmDT()                            [R/fitFfmDT.R, line 447]
+  ├─► fitFfmDT()                            [R/fitFfmDT.R, line 620]
   │     Core cross-sectional regression engine:
   │     1. Builds model.matrix per date (grouped by date)
   │     2. Constructs restriction matrices for sector + intercept models
+  │        via build_beta_star(), build_restriction_matrix(),
+  │        apply_restriction() (Phase 7 shared helpers, lines 30–74)
   │     3. Runs lm() or lmrobdetMM() per date via data.table grouping
   │     4. Optional second-pass WLS/W-Rob via calcAssetWeightsForRegression()
   │     Returns: reg.listDT (lm objects per date), betasDT (design matrices)
   │
-  ├─► extractRegressionStats()              [R/fitFfmDT.R, line 724]
+  ├─► extractRegressionStats()              [R/fitFfmDT.R, line 883]
   │     Extracts from lm objects: R², coefficients, residuals.
   │     Computes factor covariance, residual covariance, return covariance.
   │     Heavy xts conversion (6-10 as.xts.data.table calls).
   │     Three code paths: no-intercept, with-intercept, MSCI (two categoricals).
+  │     Uses build_factor_names() (line 86) and
+  │     map_coefficients_to_factor_returns() (line 125) — Phase 8 helpers.
   │
-  └─► convert.ffmSpec()                     [R/fitFfmDT.R, line 1239]
+  └─► convert.ffmSpec()                     [R/fitFfmDT.R, line 1429]
         Assembles final ffm object from spec, fit, and regstats.
-        Converts data back to data.frame (line 1267).
-        Stores lm objects in $factor.fit (line 1271).
+        Converts data back to data.frame (line 1464).
+        Stores lm objects in $factor.fit (line 1471).
 ```
 
 ### 2.2 The `ffm` Object Structure
@@ -136,6 +140,40 @@ by the spec object flags. This is the most complex branching in the package:
 The restriction matrix `R` handles the sum-to-zero constraint on sector/country
 dummies when an intercept (Market) factor is included: `f = R·g`, where `g` are the
 unrestricted coefficients.
+
+### 2.5 Internal Helpers (Phases 7–8)
+
+Six unexported helpers in `R/fitFfmDT.R` (lines 30–142) consolidate logic that was
+previously duplicated across `fitFfmDT()`, `extractRegressionStats()`, and
+`expand_newdata_ffm()`:
+
+**Design matrix helpers (Phase 7):**
+
+| Helper | Line | Purpose |
+|---|---|---|
+| `build_beta_star(data_df, exposures_char)` | 30 | Constructs `[Market \| dummies]` matrix via `model.matrix(~.-1)` per char exposure |
+| `build_restriction_matrix(K_levels)` | 45 | Sum-to-zero constraint matrix R for 1 or 2 categorical exposures |
+| `apply_restriction(beta_star, R_matrix)` | 70 | Forward: `B.mod = beta_star %*% R`; names columns V1..Vk |
+
+Used in 3 code sites: `fitFfmDT()` sector path, `fitFfmDT()` MSCI path, and
+`expand_newdata_ffm()` (predict.ffm).
+
+**Coefficient extraction helpers (Phase 8):**
+
+| Helper | Line | Purpose |
+|---|---|---|
+| `build_factor_names(specObj)` | 86 | 6-way factor.names construction (handles all model type × intercept combinations) |
+| `map_coefficients_to_factor_returns(g_row, R_matrix, K_cat, col_names)` | 125 | Reverse: splits V-coefficients from style, applies `R %*% g_cat`, returns named vector in `col_names` order |
+
+Used in `extractRegressionStats()` — replaces duplicated coefficient mapping in the
+sector and MSCI branches. The style-only branch uses `build_factor_names` only (no
+restriction matrix involved).
+
+**Known inconsistency (sector branch):** For sector+style models with intercept,
+`factor.names` order is `c("Market", style, categorical)` but `colnames(factor.returns)`
+and `colnames(beta)` are `c("Market", categorical, style)`. A reconciliation step at the
+end of `extractRegressionStats()` reorders `beta` to match `colnames(factor.returns)`.
+The MSCI branch does not have this inconsistency — both orders match `factor.names`.
 
 ---
 
@@ -799,7 +837,9 @@ scale (percentages), not 0–1 (proportions).
 | `test-roll-fitFfmDT.R` | 1 | Rolling-window FFM smoke test | Smoke (Phase 4) |
 | `test-integration-pa.R` | 4 | PA integration: moment components, subsetting, custom moment fn | Behavioural (Phase 4) |
 | `test-fitFfm-msci.R` | 12 | MSCI: LS/WLS/W-Rob × pure/style, fmCov, VaR, paFm, plot/print | Structural + behavioural (Phase 6) |
-| **Total** | **139** | | **605 assertions** |
+| `test-helpers-design-matrix.R` | 5 | `build_beta_star`, `build_restriction_matrix`, `apply_restriction` unit tests + round-trip | Behavioural (Phase 7) |
+| `test-helpers-extract-stats.R` | 7 | `build_factor_names` (6 configs), `map_coefficients_to_factor_returns` (sector/MSCI/pure) | Behavioural (Phase 8) |
+| **Total** | **151** | | **645 assertions** |
 
 **Conditional skips (added Phase 1):** Three test blocks skip when optional packages
 are absent:
@@ -886,6 +926,8 @@ These are properties that **must** hold after every phase:
 | **4 — Testing & Bug Fixes** | ✅ Complete | Unbalanced panel fix; fmCov invariants; coverage expansion; PA integration test; xts churn deferred | 458 assertions; 19 test files; 8 pre-existing bugs fixed. Commit `7039a0a`. |
 | **5 — Input Validation** | ✅ Complete | fitFfm/specFfm dedup (8 checks consolidated); column-existence in specFfm + fitTsfm; `analysis` length bug fixed; fitTsfm.control duplicate + typo | 470 assertions; 19 test files. |
 | **6 — MSCI Branch Testing** | ✅ Complete | MSCI+style extraction bug fixed; 135 MSCI assertions (LS/WLS/W-Rob); paFm decomposition; `return.cov`/`model.MSCI` on ffm; fast CI | 605 assertions; 20 test files. |
+| **7 — Shared model.matrix Helper** | ✅ Complete | `build_beta_star`, `build_restriction_matrix`, `apply_restriction` helpers; dead code removed | 623 assertions; 21 test files. Commit `6ee9673`. |
+| **8 — extractRegressionStats Cleanup** | ✅ Complete | `build_factor_names`, `map_coefficients_to_factor_returns` helpers; `.()` → `list()` cleanup; dead NSE vars removed | 645 assertions; 22 test files. Commit `492a187`. |
 
 ---
 
