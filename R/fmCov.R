@@ -90,12 +90,7 @@ fmCov.tsfm <- function(object, factor.cov, use="pairwise.complete.obs", ...) {
     identical(dim(factor.cov), as.integer(c(ncol(factor), ncol(factor))))
   }
 
-  # residual covariance matrix D
-  if (length(sig2.e) > 1) {
-    D.e = diag(sig2.e)
-  } else {
-    D.e =  as.vector(sig2.e)
-  }
+  D.e <- make_resid_diag(sig2.e)
 
   cov.fm = beta %*% factor.cov %*% t(beta) + D.e
 
@@ -139,12 +134,7 @@ fmCov.ffm <- function(object, use="pairwise.complete.obs", ...) {
     factor.cov <- cov(factor, use = use, ...)
   }
 
-  # residual covariance matrix D
-  if (length(sig2.e) > 1) {
-    D.e <- diag(sig2.e)
-  } else {
-    D.e <- as.vector(sig2.e)
-  }
+  D.e <- make_resid_diag(sig2.e)
 
   cov.fm <- beta %*% factor.cov %*% t(beta) + D.e
 

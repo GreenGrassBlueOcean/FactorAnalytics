@@ -131,10 +131,7 @@ portVaRDecomp.tsfm <- function(object, weights = NULL, factor.cov, p=0.05, type=
     stop("Invalid args: type must be 'np' or 'normal' ")
   }
   
-  # get beta.star: 1 x (K+1)
-  beta <- object$beta
-  beta[is.na(beta)] <- 0
-  n.assets = nrow(beta)
+  n.assets = nrow(object$beta)
   asset.names <- object$asset.names
   
   # check if there is weight input
@@ -152,20 +149,12 @@ portVaRDecomp.tsfm <- function(object, weights = NULL, factor.cov, p=0.05, type=
     }
   } 
   
-  # get portfolio beta.star: 1 x (K+1)
-  beta.star <- as.matrix(cbind(weights %*% as.matrix(beta), sqrt(sum(weights^2 * object$resid.sd^2))))  
-  colnames(beta.star)[dim(beta.star)[2]] <- "Residuals"
-
+  beta.star <- make_beta_star(object$beta, object$resid.sd, weights = weights)
 
   # factor returns and residuals data
   factors.xts <- object$data[,object$factor.names]
-  # Portfolio residual pseudo-factor: z(t) = e_p(t) / sig_p
-  # where e_p(t) = sum(w_i * e_it) and sig_p = beta.star[,"Residuals"]
-  resid.xts <- xts::as.xts(
-    zoo::coredata(residuals(object)) %*% weights / beta.star[1, "Residuals"],
-    order.by = zoo::index(residuals(object))
-  )
-  zoo::index(resid.xts) <- as.Date(zoo::index(resid.xts))
+  resid.xts <- normalize_fm_residuals(residuals(object), object$resid.sd,
+                                      weights = weights)
   
   if (type=="normal") {
     # get cov(F): K x K
@@ -178,12 +167,7 @@ portVaRDecomp.tsfm <- function(object, weights = NULL, factor.cov, p=0.05, type=
       }
     }
     
-    # get cov(F.star): (K+1) x (K+1)
-    K <- ncol(object$beta)
-    factor.star.cov <- diag(K+1)
-    factor.star.cov[1:K, 1:K] <- factor.cov
-    colnames(factor.star.cov) <- c(colnames(factor.cov),"Residuals")
-    rownames(factor.star.cov) <- c(colnames(factor.cov),"Residuals")
+    factor.star.cov <- make_factor_star_cov(factor.cov)
     
     # factor expected returns
     MU <- c(colMeans(factors.xts, na.rm=TRUE), 0)
@@ -277,9 +261,7 @@ portVaRDecomp.ffm <- function(object, weights = NULL, factor.cov, p=0.05, type=c
     stop("Invalid args: type must be 'np' or 'normal' ")
   }
   
-  beta <- object$beta
-  beta[is.na(beta)] <- 0
-  n.assets = nrow(beta)
+  n.assets = nrow(object$beta)
   asset.names <- unique(object$data[[object$asset.var]])
   
   # check if there is weight input
@@ -297,18 +279,12 @@ portVaRDecomp.ffm <- function(object, weights = NULL, factor.cov, p=0.05, type=c
     }
   }   
 
-  # get portfolio beta.star: 1 x (K+1)  
-  beta.star <- as.matrix(cbind(weights %*% beta, sqrt(sum(weights^2 * object$resid.var))))
-  colnames(beta.star)[dim(beta.star)[2]] <- "Residuals"
+  beta.star <- make_beta_star(object$beta, sqrt(object$resid.var), weights = weights)
 
   # factor returns and residuals data
   factors.xts <- object$factor.returns
-  # Portfolio residual pseudo-factor: z(t) = e_p(t) / sig_p
-  resid.xts <- xts::as.xts(
-    zoo::coredata(residuals(object)) %*% weights / beta.star[1, "Residuals"],
-    order.by = zoo::index(residuals(object))
-  )
-  zoo::index(resid.xts) <- as.Date(zoo::index(resid.xts))
+  resid.xts <- normalize_fm_residuals(residuals(object), sqrt(object$resid.var),
+                                      weights = weights)
 
   if (type=="normal") {
     # get cov(F): K x K
@@ -320,12 +296,7 @@ portVaRDecomp.ffm <- function(object, weights = NULL, factor.cov, p=0.05, type=c
              compatible with the number of factors in the fitSfm object")
       }
     }
-    # get cov(F.star): (K+1) x (K+1)
-    K <- ncol(object$beta)
-    factor.star.cov <- diag(K+1)
-    factor.star.cov[1:K, 1:K] <- factor.cov
-    colnames(factor.star.cov) <- c(colnames(factor.cov),"Residuals")
-    rownames(factor.star.cov) <- c(colnames(factor.cov),"Residuals")
+    factor.star.cov <- make_factor_star_cov(factor.cov)
     
     # factor expected returns
     MU <- c(colMeans(factors.xts, na.rm=TRUE), 0)

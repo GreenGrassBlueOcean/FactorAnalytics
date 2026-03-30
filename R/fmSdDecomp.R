@@ -99,11 +99,7 @@ fmSdDecomp <- function(object, ...){
 fmSdDecomp.tsfm <- function(object, factor.cov, 
                             use="pairwise.complete.obs", ...) {
   
-  # get beta.star: N x (K+1)
-  beta <- object$beta
-  beta[is.na(beta)] <- 0
-  beta.star <- as.matrix(cbind(beta, object$resid.sd))
-  colnames(beta.star)[dim(beta.star)[2]] <- "Residuals"
+  beta.star <- make_beta_star(object$beta, object$resid.sd)
   
   # get cov(F): K x K
   factor <- as.matrix(object$data[, object$factor.names])
@@ -116,12 +112,7 @@ fmSdDecomp.tsfm <- function(object, factor.cov,
     }
   }
   
-  # get cov(F.star): (K+1) x (K+1)
-  K <- ncol(object$beta)
-  factor.star.cov <- diag(K+1)
-  factor.star.cov[1:K, 1:K] <- factor.cov
-  colnames(factor.star.cov) <- c(colnames(factor.cov),"Residuals")
-  rownames(factor.star.cov) <- c(colnames(factor.cov),"Residuals")
+  factor.star.cov <- make_factor_star_cov(factor.cov)
   
   # compute factor model sd; a vector of length N
   Sd.fm <- sqrt(rowSums(beta.star %*% factor.star.cov * beta.star))
@@ -144,11 +135,7 @@ fmSdDecomp.tsfm <- function(object, factor.cov,
 fmSdDecomp.sfm <- function(object, factor.cov,
                            use="pairwise.complete.obs", ...) {
   
-  # get beta.star: N x (K+1)
-  beta <- object$loadings
-  beta[is.na(beta)] <- 0
-  beta.star <- as.matrix(cbind(beta, object$resid.sd))
-  colnames(beta.star)[dim(beta.star)[2]] <- "Residuals"
+  beta.star <- make_beta_star(object$loadings, object$resid.sd)
   
   # get cov(F): K x K
   factor <- as.matrix(object$factors)
@@ -161,12 +148,7 @@ fmSdDecomp.sfm <- function(object, factor.cov,
     }
   }
   
-  # get cov(F.star): (K+1) x (K+1)
-  K <- object$k
-  factor.star.cov <- diag(K+1)
-  factor.star.cov[1:K, 1:K] <- factor.cov
-  colnames(factor.star.cov) <- c(colnames(factor.cov),"Residuals")
-  rownames(factor.star.cov) <- c(colnames(factor.cov),"Residuals")
+  factor.star.cov <- make_factor_star_cov(factor.cov)
   
   # compute factor model sd; a vector of length N
   Sd.fm <- sqrt(rowSums(beta.star %*% factor.star.cov * beta.star))
@@ -188,10 +170,9 @@ fmSdDecomp.sfm <- function(object, factor.cov,
 
 fmSdDecomp.ffm <- function(object, factor.cov, ...) {
   
-  # get beta.star: N x (K+1)
-  beta <- object$beta
-  beta.star <- as.matrix(cbind(beta, sqrt(object$resid.var)))
-  colnames(beta.star)[dim(beta.star)[2]] <- "Residuals"
+  # NB: make_beta_star zeros NAs; the old inline code here did NOT zero NAs
+  # in the ffm method (all other methods did). This fixes the inconsistency.
+  beta.star <- make_beta_star(object$beta, sqrt(object$resid.var))
   
   # get cov(F): K x K
   if (missing(factor.cov)) {
@@ -204,12 +185,7 @@ fmSdDecomp.ffm <- function(object, factor.cov, ...) {
     }
   }
   
-  # get cov(F.star): (K+1) x (K+1)
-  K <- ncol(object$beta)
-  factor.star.cov <- diag(K+1)
-  factor.star.cov[1:K, 1:K] <- factor.cov
-  colnames(factor.star.cov) <- c(colnames(factor.cov),"Residuals")
-  rownames(factor.star.cov) <- c(colnames(factor.cov),"Residuals")
+  factor.star.cov <- make_factor_star_cov(factor.cov)
   
   # compute factor model sd; a vector of length N
   Sd.fm <- sqrt(rowSums(beta.star %*% factor.star.cov * beta.star))

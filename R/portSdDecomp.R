@@ -114,10 +114,7 @@ portSdDecomp <- function(object, ...){
 portSdDecomp.tsfm <- function(object, weights = NULL, factor.cov, 
                               use="pairwise.complete.obs", ...) {
   
-  # get beta.star: 1 x (K+1)
-  beta <- object$beta
-  beta[is.na(beta)] <- 0
-  n.assets = nrow(beta)
+  n.assets = nrow(object$beta)
   asset.names <- object$asset.names
   
   # check if there is weight input
@@ -135,11 +132,8 @@ portSdDecomp.tsfm <- function(object, weights = NULL, factor.cov,
     }
   } 
 
-  # get portfolio beta.star: 1 x (K+1)
-  beta.star <- as.matrix(cbind(weights %*% as.matrix(beta), sqrt(sum(weights^2 * object$resid.sd^2))))  
-  colnames(beta.star)[dim(beta.star)[2]] <- "Residuals"
+  beta.star <- make_beta_star(object$beta, object$resid.sd, weights = weights)
   
-  # get cov(F): K x K
   # get cov(F): K x K
   factor <- as.matrix(object$data[, object$factor.names])
   if (missing(factor.cov)) {
@@ -151,12 +145,7 @@ portSdDecomp.tsfm <- function(object, weights = NULL, factor.cov,
     }
   }
   
-  # get cov(F.star): (K+1) x (K+1)
-  K <- ncol(object$beta)
-  factor.star.cov <- diag(K+1)
-  factor.star.cov[1:K, 1:K] <- factor.cov
-  colnames(factor.star.cov) <- c(colnames(factor.cov),"Residuals")
-  rownames(factor.star.cov) <- c(colnames(factor.cov),"Residuals")
+  factor.star.cov <- make_factor_star_cov(factor.cov)
   
   # compute factor model sd; a vector of length 1
   Sd.fm <- sqrt(rowSums(beta.star %*% factor.star.cov * beta.star))
@@ -178,9 +167,7 @@ portSdDecomp.tsfm <- function(object, weights = NULL, factor.cov,
 
 portSdDecomp.ffm <- function(object, weights = NULL, factor.cov, ...) {
   
-  beta <- object$beta
-  beta[is.na(beta)] <- 0
-  n.assets = nrow(beta)
+  n.assets = nrow(object$beta)
   asset.names <- unique(object$data[[object$asset.var]])
   
   # check if there is weight input
@@ -198,11 +185,7 @@ portSdDecomp.ffm <- function(object, weights = NULL, factor.cov, ...) {
     }
   }  
 
-  
-  # get portfolio beta.star: 1 x (K+1)
-  beta.star <- as.matrix(cbind(weights %*% beta, sqrt(sum(weights^2 * object$resid.var))))
-  colnames(beta.star)[dim(beta.star)[2]] <- "Residuals"
-  
+  beta.star <- make_beta_star(object$beta, sqrt(object$resid.var), weights = weights)
   
   # get cov(F): K x K
   if (missing(factor.cov)) {
@@ -215,12 +198,7 @@ portSdDecomp.ffm <- function(object, weights = NULL, factor.cov, ...) {
     }
   }
   
-  # get cov(F.star): (K+1) x (K+1)
-  K <- ncol(beta)
-  factor.star.cov <- diag(K+1)
-  factor.star.cov[1:K, 1:K] <- factor.cov
-  colnames(factor.star.cov) <- c(colnames(factor.cov),"Residuals")
-  rownames(factor.star.cov) <- c(colnames(factor.cov),"Residuals")
+  factor.star.cov <- make_factor_star_cov(factor.cov)
   
 
   # compute factor model sd; a vector of length 1

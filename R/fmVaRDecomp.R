@@ -105,16 +105,11 @@ fmVaRDecomp.tsfm <- function(object, factor.cov, p=0.05, type=c("np","normal"),
     stop("Invalid args: type must be 'np' or 'normal' ")
   }
   
-  # get beta.star
-  beta <- object$beta
-  beta[is.na(beta)] <- 0
-  beta.star <- as.matrix(cbind(beta, object$resid.sd))
-  colnames(beta.star)[dim(beta.star)[2]] <- "Residuals"
+  beta.star <- make_beta_star(object$beta, object$resid.sd)
   
   # factor returns and residuals data
   factors.xts <- object$data[,object$factor.names]
-  resid.xts <- xts::as.xts(t(t(residuals(object))/object$resid.sd))
-  time(resid.xts) <- as.Date(time(resid.xts))
+  resid.xts <- normalize_fm_residuals(residuals(object), object$resid.sd)
   
   if (type=="normal") {
     # get cov(F): K x K
@@ -126,12 +121,7 @@ fmVaRDecomp.tsfm <- function(object, factor.cov, p=0.05, type=c("np","normal"),
            compatible with the number of factors in the fitTsfm object")
       }
     }
-    # get cov(F.star): (K+1) x (K+1)
-    K <- ncol(object$beta)
-    factor.star.cov <- diag(K+1)
-    factor.star.cov[1:K, 1:K] <- factor.cov
-    colnames(factor.star.cov) <- c(colnames(factor.cov),"Residuals")
-    rownames(factor.star.cov) <- c(colnames(factor.cov),"Residuals")
+    factor.star.cov <- make_factor_star_cov(factor.cov)
     # factor expected returns
     MU <- c(colMeans(factors.xts, na.rm=TRUE), 0)
     names(MU) <- colnames(beta.star)
@@ -217,16 +207,11 @@ fmVaRDecomp.sfm <- function(object, factor.cov, p=0.05, type=c("np","normal"),
     stop("Invalid args: type must be 'np' or 'normal' ")
   }
   
-  # get beta.star
-  beta <- object$loadings
-  beta[is.na(beta)] <- 0
-  beta.star <- as.matrix(cbind(beta, object$resid.sd))
-  colnames(beta.star)[dim(beta.star)[2]] <- "Residuals"
+  beta.star <- make_beta_star(object$loadings, object$resid.sd)
   
   # factor returns and residuals data
   factors.xts <- object$factors
-  resid.xts <- xts::as.xts(t(t(residuals(object))/object$resid.sd))
-  time(resid.xts) <- as.Date(time(resid.xts))
+  resid.xts <- normalize_fm_residuals(residuals(object), object$resid.sd)
   
   if (type=="normal") {
     # get cov(F): K x K
@@ -238,12 +223,7 @@ fmVaRDecomp.sfm <- function(object, factor.cov, p=0.05, type=c("np","normal"),
              compatible with the number of factors in the fitSfm object")
       }
     }
-    # get cov(F.star): (K+1) x (K+1)
-    K <- object$k
-    factor.star.cov <- diag(K+1)
-    factor.star.cov[1:K, 1:K] <- factor.cov
-    colnames(factor.star.cov) <- c(colnames(factor.cov),"Residuals")
-    rownames(factor.star.cov) <- c(colnames(factor.cov),"Residuals")
+    factor.star.cov <- make_factor_star_cov(factor.cov)
     # factor expected returns
     MU <- c(colMeans(factors.xts, na.rm=TRUE), 0)
     # SIGMA*Beta to compute normal mVaR
@@ -329,16 +309,11 @@ fmVaRDecomp.ffm <- function(object, factor.cov, p=0.05, type=c("np","normal"),
     stop("Invalid args: type must be 'np' or 'normal' ")
   }
   
-  # get beta.star
-  beta <- object$beta
-  beta[is.na(beta)] <- 0
-  beta.star <- as.matrix(cbind(beta, sqrt(object$resid.var)))
-  colnames(beta.star)[dim(beta.star)[2]] <- "Residuals"
+  beta.star <- make_beta_star(object$beta, sqrt(object$resid.var))
   
   # factor returns and residuals data
   factors.xts <- object$factor.returns
-  resid.xts <- xts::as.xts(t(t(residuals(object))/sqrt(object$resid.var)))
-  time(resid.xts) <- as.Date(time(resid.xts))
+  resid.xts <- normalize_fm_residuals(residuals(object), sqrt(object$resid.var))
   
   if (type=="normal") {
     # get cov(F): K x K
@@ -350,12 +325,7 @@ fmVaRDecomp.ffm <- function(object, factor.cov, p=0.05, type=c("np","normal"),
              compatible with the number of factors in the fitSfm object")
       }
     }
-    # get cov(F.star): (K+1) x (K+1)
-    K <- ncol(object$beta)
-    factor.star.cov <- diag(K+1)
-    factor.star.cov[1:K, 1:K] <- factor.cov
-    colnames(factor.star.cov) <- c(colnames(factor.cov),"Residuals")
-    rownames(factor.star.cov) <- c(colnames(factor.cov),"Residuals")
+    factor.star.cov <- make_factor_star_cov(factor.cov)
     # factor expected returns
     MU <- c(colMeans(factors.xts, na.rm=TRUE), 0)
     # SIGMA*Beta to compute normal mVaR

@@ -23,6 +23,7 @@ architecture reference are in:
 | **Phase 6 — MSCI Branch Testing** | ✅ Complete | MSCI+style extraction bug fixed. 135 MSCI-specific assertions (LS/WLS/W-Rob × pure/style, paFm, downstream methods). `print.tsfm` example fix. `return.cov`/`resid.cov`/`model.MSCI` added to ffm object. Fast CI. 605 assertions across 20 test files, 0 failures. R CMD check clean. |
 | **Phase 7 — Shared model.matrix Helper** | ✅ Complete | Extracted `build_beta_star`, `build_restriction_matrix`, `apply_restriction` helpers. 3 code sites → 1 source of truth for categorical design matrix pipeline. Dead code removed (`formula.expochar`, `formulaL`, `beta.expochar`, `beta1`/`beta2` columns). 623 assertions across 21 test files, 0 failures. R CMD check clean. |
 | **Phase 8 — extractRegressionStats Cleanup** | ✅ Complete | Extracted `build_factor_names` (6-way factor.names logic → 1 helper) + `map_coefficients_to_factor_returns` (sector/MSCI coefficient mapping dedup). `.()` → `list()` cleanup in `extractRegressionStats`. Dead NSE vars removed (`factor.returns1`, `factor.returns2`). 645 assertions across 22 test files, 0 failures. R CMD check clean. |
+| **Phase 9 — S3 Method Consolidation** | ✅ Complete | 4 shared risk helpers (`make_beta_star`, `make_factor_star_cov`, `normalize_fm_residuals`, `make_resid_diag`) in `R/helpers-risk.R`. Integrated into 8 files / 15+ methods. `fmSdDecomp.ffm` NA-zeroing inconsistency fixed. 690 assertions across 23 test files, 0 failures. R CMD check clean. |
 
 ## Test Infrastructure
 
@@ -55,7 +56,8 @@ architecture reference are in:
   - `test-fitFfm-msci.R` — 135 assertions: MSCI model: LS/WLS/W-Rob × pure/style, downstream fmCov/VaR/ES, paFm decomposition identity, plot/print/summary (Phase 6)
   - `test-helpers-design-matrix.R` — 18 assertions: build_beta_star, build_restriction_matrix, apply_restriction unit tests + round-trip vs expand_newdata_ffm (Phase 7)
   - `test-helpers-extract-stats.R` — 22 assertions: build_factor_names (6 model configs + round-trip), map_coefficients_to_factor_returns (sector/MSCI/pure, exact match against fitted models) (Phase 8)
-- **Total:** 657 assertions across 22 test files, 0 failures, 0 skips.
+  - `test-helpers-risk.R` — 33 assertions: make_beta_star (asset/portfolio/ffm), make_factor_star_cov (structure/round-trip/NULL colnames), normalize_fm_residuals (asset/portfolio correctness), make_resid_diag (multi/single asset) (Phase 9)
+- **Total:** 690 assertions across 23 test files, 0 failures, 0 skips.
 - **Coverage:** 46.4% baseline (commit `4b58a6e`).
 - **Tolerances:** Coefficients/factor returns `1e-10`, covariance `1e-8`, risk decomp `1e-6`.
 - **Setup:** `tests/testthat/setup.R` loads all bundled datasets and prepares the

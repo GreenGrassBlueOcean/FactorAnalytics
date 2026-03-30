@@ -132,7 +132,7 @@ portVolDecomp.tsfm <- function(object, weights = NULL, factor.cov,
 
   factorVol = x %*% factor.cov %*% t(x)
 
-  D <- diag(object$resid.sd^2)
+  D <- make_resid_diag(object$resid.sd^2)
 
   residVol = t(weights) %*% D %*% weights
 
@@ -198,7 +198,7 @@ portVolDecomp.ffm <- function(object, weights = NULL, factor.cov, ...) {
 
   factorVol = x %*% factor.cov %*% t(x)
 
-  D <- diag(object$resid.var)
+  D <- make_resid_diag(object$resid.var)
 
   residVol = t(weights) %*% D %*% weights
 
