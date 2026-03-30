@@ -20,7 +20,7 @@ architecture reference are in:
 | **Phase 3 — API Hardening** | ✅ Complete | `predict.ffm` newdata expansion, `char_levels` slot. 294 assertions. Commits `2f81a1e`, `fde2aee`. ||
 | **Phase 4 — Testing & Bug Fixes** | ✅ Complete | Unbalanced panel bug fixed. fmCov invariants. Coverage expansion. PA integration test. xts churn profiled → deferred. 8 pre-existing bugs fixed. 458 assertions across 19 test files, 0 failures, 0 skips. Commit `7039a0a`. |
 | **Phase 5 — Input Validation** | ✅ Complete | fitFfm/specFfm dedup (8 checks consolidated). Column-existence checks in specFfm + fitTsfm. `analysis` length bug fixed. fitTsfm.control duplicate + typo fixed. 470 assertions across 19 test files, 0 failures. |
-| **Phase 6 — MSCI Branch Testing** | ✅ Complete | MSCI+style extraction bug fixed. 48 MSCI-specific assertions. `print.tsfm` example fix. 518 assertions across 20 test files, 0 failures. R CMD check clean. |
+| **Phase 6 — MSCI Branch Testing** | ✅ Complete | MSCI+style extraction bug fixed. 135 MSCI-specific assertions (LS/WLS/W-Rob × pure/style, paFm, downstream methods). `print.tsfm` example fix. `return.cov`/`resid.cov`/`model.MSCI` added to ffm object. Fast CI. 605 assertions across 20 test files, 0 failures. R CMD check clean. |
 
 ## Test Infrastructure
 
@@ -30,7 +30,7 @@ architecture reference are in:
   **unmodified** v2.4.2 upstream code by `tests/testthat/helpers/generate_fixtures.R`;
   4 added in Phase 2 for vectorized EWMA/GARCH intermediate results.
   Each fixture stores only numeric components (no full `lm`/`ffm` objects).
-- **Test files:** 19 files in `tests/testthat/`:
+- **Test files:** 20 files in `tests/testthat/`:
   - `test-fitFfm.R` — 5 FFM model branches + structure/dimension invariants
   - `test-fitTsfm.R` — 3 TSFM paths + manual `lm()` cross-validation
   - `test-fmCov.R` — Covariance matrices + identity verification
@@ -50,9 +50,9 @@ architecture reference are in:
   - `test-fitTsfmUpDn.R` — 12 assertions: up/down market timing model (Phase 4.3)
   - `test-roll-fitFfmDT.R` — 2 assertions: rolling-window FFM smoke test (Phase 4.3)
   - `test-integration-pa.R` — 20 assertions: PortfolioAnalytics integration simulation (Phase 4.4)
-  - `test-fitFfm-msci.R` — 48 assertions: MSCI model (2-char pure + 2-char+style + downstream methods) (Phase 6)
-- **Total:** 518 assertions across 20 test files, 0 failures, 0 skips.
-- **Coverage:** 46.4% baseline (commit `4b58a6e`); target 55–60% after Phase 4.
+  - `test-fitFfm-msci.R` — 135 assertions: MSCI model: LS/WLS/W-Rob × pure/style, downstream fmCov/VaR/ES, paFm decomposition identity, plot/print/summary (Phase 6)
+- **Total:** 605 assertions across 20 test files, 0 failures, 0 skips.
+- **Coverage:** 46.4% baseline (commit `4b58a6e`).
 - **Tolerances:** Coefficients/factor returns `1e-10`, covariance `1e-8`, risk decomp `1e-6`.
 - **Setup:** `tests/testthat/setup.R` loads all bundled datasets and prepares the
   `dat145` subset used across multiple test files.

@@ -2,7 +2,7 @@
 
 > Reference document for the GreenGrassBlueOcean refactoring effort.
 > Generated from `braverock/FactorAnalytics` v2.4.2 (2024-12-12).
-> Updated 2026-03-29 with Phase 0, 0.5, 1 (Dependency Pruning), 2 (Performance), 4 (Testing & Bug Fixes), and 5 (Input Validation) findings.
+> Updated 2026-03-30 with Phases 0–6 findings.
 
 ---
 
@@ -80,7 +80,8 @@ ffm
 ├── $resid.var         numeric (N)         Residual variances per asset
 ├── $return.cov        N × N matrix       Full return covariance (B·Σf·B' + D)
 ├── $g.cov             matrix or NULL      g-coefficient covariance (intercept models)
-├── $restriction.mat   matrix or NULL      Restriction matrix R (intercept models)
+├── $restriction.mat   matrix or NULL      Restriction matrix R (intercept/MSCI models)
+├── $model.MSCI        logical             TRUE when 2+ character exposures (Phase 6)
 ├── $factor.fit        list (T)            Stripped lm() objects per date (Phase 2: env severed, $x/$y removed)
 ├── $factor.names      character (K)       Factor names
 ├── $asset.names       character (N)       Asset names
@@ -91,7 +92,8 @@ ffm
 ├── $ret.var           character            Column name for returns
 ├── $exposure.vars     character            Column names for exposures
 ├── $exposures.num     character            Numeric exposure names
-└── $exposures.char    character            Categorical exposure names
+├── $exposures.char    character            Categorical exposure names
+└── $char_levels       named list          Ordered factor levels per char exposure (Phase 3)
 ```
 
 ### 2.3 The `ffmSpec` Object Structure
@@ -457,6 +459,29 @@ merging.
    message on line 276 had a typo: "Invaid" instead of "Invalid".
    **Fix:** Removed the duplicate check; corrected the typo.
 
+### 4.10 Bugs Fixed During Phase 6 (MSCI Branch Testing)
+
+1. **`extractRegressionStats()` MSCI+style non-conformable matrix multiplication**
+   (R/fitFfmDT.R, MSCI branch):
+   The MSCI branch computed `K <- length(factor.names) - length(exposures.char)` and
+   did `R_matrix %*% g[1:K]`. When numeric (style) exposures were present, `K` included
+   style coefficients, making `g[1:K]` longer than `ncol(R_matrix)`. Additionally,
+   `beta.mic` lacked style exposure columns, and `restriction.mat` was never assigned.
+   **Fix:** Replaced `K` with `K_cat = K1 + K2 - 1`; separated categorical from style
+   coefficients before R_matrix multiplication; appended style exposures to beta;
+   set `restriction.mat`.
+
+2. **`print.tsfm` roxygen example missing `make.names()`**:
+   The example used `mkt.name="SP500.TR"` but loaded `managers` without `make.names()`.
+   Phase 5's column-existence check exposed this latent bug.
+   **Fix:** Added `colnames(managers) <- make.names(colnames(managers))` to the example.
+
+3. **`convert.ffmSpec()` discarded `return.cov`, `resid.cov`, `model.MSCI`**:
+   These values were computed in `extractRegressionStats()` and included in its return
+   list, but `convert.ffmSpec()` never transferred them to the final `ffm` object.
+   **Fix:** Added `ffmObj$return.cov`, `ffmObj$resid.cov`, `ffmObj$model.MSCI` to
+   `convert.ffmSpec()`.
+
 ---
 
 ## 5. S3 Class Hierarchy and Method Dispatch
@@ -773,7 +798,8 @@ scale (percentages), not 0–1 (proportions).
 | `test-fitTsfmUpDn.R` | 4 | Up/down market timing model | Behavioural (Phase 4) |
 | `test-roll-fitFfmDT.R` | 1 | Rolling-window FFM smoke test | Smoke (Phase 4) |
 | `test-integration-pa.R` | 4 | PA integration: moment components, subsetting, custom moment fn | Behavioural (Phase 4) |
-| **Total** | **127** | | **470 assertions** |
+| `test-fitFfm-msci.R` | 12 | MSCI: LS/WLS/W-Rob × pure/style, fmCov, VaR, paFm, plot/print | Structural + behavioural (Phase 6) |
+| **Total** | **139** | | **605 assertions** |
 
 **Conditional skips (added Phase 1):** Three test blocks skip when optional packages
 are absent:
@@ -858,12 +884,25 @@ These are properties that **must** hold after every phase:
 | **2 — Performance** | ✅ Complete | Vectorize 5 for loops; strip lm() objects; dedup R² | 269 assertions; 4 new fixtures; Robust EWMA bug fixed. Commit `3988d65`. |
 | **3 — API Hardening** | ✅ Complete | `predict.ffm` newdata expansion; `char_levels` slot; `expand_newdata_ffm` helper | 294 assertions. Commits `2f81a1e`, `fde2aee`. |
 | **4 — Testing & Bug Fixes** | ✅ Complete | Unbalanced panel fix; fmCov invariants; coverage expansion; PA integration test; xts churn deferred | 458 assertions; 19 test files; 8 pre-existing bugs fixed. Commit `7039a0a`. |
-| **5 — Input Validation** | ✅ Complete | fitFfm/specFfm dedup (8 checks consolidated); column-existence in specFfm + fitTsfm; `analysis` length bug fixed; fitTsfm.control duplicate + typo | 470 assertions; 19 test files. ||
+| **5 — Input Validation** | ✅ Complete | fitFfm/specFfm dedup (8 checks consolidated); column-existence in specFfm + fitTsfm; `analysis` length bug fixed; fitTsfm.control duplicate + typo | 470 assertions; 19 test files. |
+| **6 — MSCI Branch Testing** | ✅ Complete | MSCI+style extraction bug fixed; 135 MSCI assertions (LS/WLS/W-Rob); paFm decomposition; `return.cov`/`model.MSCI` on ffm; fast CI | 605 assertions; 20 test files. |
 
 ---
 
-## 13. CI / Notifications
+## 13. CI / CD (Phase 6)
 
-The CI workflow (`.github/workflows/slack-notify-build.yml`) runs R CMD check on 5 OS/R-version combinations. It inherited Slack notification steps from the upstream `braverock/FactorAnalytics` repo. These steps are guarded with `if: env.SLACK_BOT_TOKEN != ''` so they are silently skipped when the `SLACK_NOTIFICATIONS_BOT_TOKEN` secret is not configured.
+Two-tier GitHub Actions setup (`.github/workflows/R-CMD-check.yaml`):
 
-**Future:** Consider replacing the Slack integration with Mattermost using [GreenGrassBlueOcean/MattermostR](https://github.com/GreenGrassBlueOcean/MattermostR). This would align CI notifications with the organisation's own tooling rather than depending on the upstream's Slack workspace.
+| Job | Trigger | Matrix | Typical time |
+|---|---|---|---|
+| `check` | Every push & PR | ubuntu-latest, R release | ~3 min |
+| `check-full` | Pushes to main only | macOS + Windows + ubuntu devel + ubuntu oldrel | ~4 min (parallel) |
+
+Key design decisions:
+- **No TinyTeX** — vignette is a pre-built PDF via `R.rsp::asis`, no LaTeX needed
+- **No GhostScript** — the PDF size note is cosmetic only
+- **LFS via `actions/checkout@v4` `lfs: true`** — replaces manual cache management
+- **Separate coverage workflow** (`.github/workflows/test-coverage.yaml`) — runs `covr::package_coverage()` and uploads to Codecov
+
+The old 5-matrix workflow (`slack-notify-build.yml`) with Slack notifications and
+GhostScript/TinyTeX installation was removed in Phase 6.
