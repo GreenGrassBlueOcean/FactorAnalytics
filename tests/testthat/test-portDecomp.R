@@ -2,6 +2,14 @@
 # test-portDecomp.R — Regression tests for portfolio-level risk decomposition
 #
 # Covers: portSdDecomp, portVaRDecomp, portEsDecomp on both TSFM and FFM.
+#
+# NOTE: portVaRDecomp and portEsDecomp had an upstream bug in the portfolio
+# residual pseudo-factor normalization. The original code computed:
+#   z(t) = sum(w_i * e_it/sigma_i)        [WRONG]
+# The correct formula is:
+#   z(t) = sum(w_i * e_it) / sigma_p      [CORRECT]
+# where sigma_p = sqrt(sum(w_i^2 * sigma_i^2)).
+# Fixtures were regenerated after the fix.
 # =============================================================================
 
 # --- portSdDecomp TSFM ---
@@ -14,10 +22,12 @@ test_that("portSdDecomp TSFM reproduces fixture", {
     data = managers
   )
   decomp <- portSdDecomp(fit)
-  expect_equal(decomp$Sd.fm, fix$Sd.fm, tolerance = 1e-6)
+  expect_equal(decomp$portSd, fix$portSd, tolerance = 1e-6)
   expect_equal(decomp$mSd, fix$mSd, tolerance = 1e-6)
   expect_equal(decomp$cSd, fix$cSd, tolerance = 1e-6)
   expect_equal(decomp$pcSd, fix$pcSd, tolerance = 1e-6)
+  # pcSd sums to 100
+  expect_equal(sum(decomp$pcSd), 100, tolerance = 1e-6)
 })
 
 # --- portVaRDecomp TSFM ---
@@ -30,10 +40,14 @@ test_that("portVaRDecomp TSFM reproduces fixture", {
     data = managers
   )
   decomp <- portVaRDecomp(fit, p = 0.9, type = "normal")
-  expect_equal(decomp$VaR.fm, fix$VaR.fm, tolerance = 1e-6)
+  expect_equal(decomp$portVaR, fix$portVaR, tolerance = 1e-6)
   expect_equal(decomp$mVaR, fix$mVaR, tolerance = 1e-6)
   expect_equal(decomp$cVaR, fix$cVaR, tolerance = 1e-6)
   expect_equal(decomp$pcVaR, fix$pcVaR, tolerance = 1e-6)
+  # pcVaR sums to 100
+  expect_equal(sum(decomp$pcVaR), 100, tolerance = 1e-6)
+  # cVaR sums to portVaR
+  expect_equal(sum(decomp$cVaR), as.numeric(decomp$portVaR), tolerance = 1e-6)
 })
 
 # --- portEsDecomp TSFM ---
@@ -46,10 +60,14 @@ test_that("portEsDecomp TSFM reproduces fixture", {
     data = managers
   )
   decomp <- portEsDecomp(fit, p = 0.9, type = "normal")
-  expect_equal(decomp$ES.fm, fix$ES.fm, tolerance = 1e-6)
+  expect_equal(decomp$portES, fix$portES, tolerance = 1e-6)
   expect_equal(decomp$mES, fix$mES, tolerance = 1e-6)
   expect_equal(decomp$cES, fix$cES, tolerance = 1e-6)
   expect_equal(decomp$pcES, fix$pcES, tolerance = 1e-6)
+  # pcES sums to 100
+  expect_equal(sum(decomp$pcES), 100, tolerance = 1e-6)
+  # cES sums to portES
+  expect_equal(sum(decomp$cES), as.numeric(decomp$portES), tolerance = 1e-6)
 })
 
 # --- portSdDecomp FFM ---
@@ -61,10 +79,12 @@ test_that("portSdDecomp FFM reproduces fixture", {
     exposure.vars = c("P2B", "EV2S")
   )
   decomp <- portSdDecomp(fit)
-  expect_equal(decomp$Sd.fm, fix$Sd.fm, tolerance = 1e-6)
+  expect_equal(decomp$portSd, fix$portSd, tolerance = 1e-6)
   expect_equal(decomp$mSd, fix$mSd, tolerance = 1e-6)
   expect_equal(decomp$cSd, fix$cSd, tolerance = 1e-6)
   expect_equal(decomp$pcSd, fix$pcSd, tolerance = 1e-6)
+  # pcSd sums to 100
+  expect_equal(sum(decomp$pcSd), 100, tolerance = 1e-6)
 })
 
 # --- portVaRDecomp FFM ---
@@ -76,10 +96,14 @@ test_that("portVaRDecomp FFM reproduces fixture", {
     exposure.vars = c("P2B", "EV2S")
   )
   decomp <- portVaRDecomp(fit, p = 0.9, type = "normal")
-  expect_equal(decomp$VaR.fm, fix$VaR.fm, tolerance = 1e-6)
+  expect_equal(decomp$portVaR, fix$portVaR, tolerance = 1e-6)
   expect_equal(decomp$mVaR, fix$mVaR, tolerance = 1e-6)
   expect_equal(decomp$cVaR, fix$cVaR, tolerance = 1e-6)
   expect_equal(decomp$pcVaR, fix$pcVaR, tolerance = 1e-6)
+  # pcVaR sums to 100
+  expect_equal(sum(decomp$pcVaR), 100, tolerance = 1e-6)
+  # cVaR sums to portVaR
+  expect_equal(sum(decomp$cVaR), as.numeric(decomp$portVaR), tolerance = 1e-6)
 })
 
 # --- portEsDecomp FFM ---
@@ -91,10 +115,36 @@ test_that("portEsDecomp FFM reproduces fixture", {
     exposure.vars = c("P2B", "EV2S")
   )
   decomp <- portEsDecomp(fit, p = 0.9, type = "normal")
-  expect_equal(decomp$ES.fm, fix$ES.fm, tolerance = 1e-6)
+  expect_equal(decomp$portES, fix$portES, tolerance = 1e-6)
   expect_equal(decomp$mES, fix$mES, tolerance = 1e-6)
   expect_equal(decomp$cES, fix$cES, tolerance = 1e-6)
   expect_equal(decomp$pcES, fix$pcES, tolerance = 1e-6)
+  # pcES sums to 100
+  expect_equal(sum(decomp$pcES), 100, tolerance = 1e-6)
+  # cES sums to portES
+  expect_equal(sum(decomp$cES), as.numeric(decomp$portES), tolerance = 1e-6)
+})
+
+# --- Residual pseudo-factor unit variance (mathematical correctness) ---
+test_that("corrected portfolio residual pseudo-factor has near-unit variance", {
+  fit <- fitTsfm(
+    asset.names = colnames(managers[, 1:6]),
+    factor.names = colnames(managers[, 7:9]),
+    rf.name = colnames(managers[, 10]),
+    data = managers
+  )
+  n <- nrow(fit$beta)
+  w <- rep(1/n, n)
+  sig_p <- sqrt(sum(w^2 * fit$resid.sd^2))
+
+  resid_mat <- zoo::coredata(residuals(fit))
+  z_correct <- (resid_mat %*% w) / sig_p
+
+  # Under the factor model, z should have unit variance
+  # Allow tolerance for finite sample + NAs
+  z_var <- var(as.numeric(z_correct), na.rm = TRUE)
+  expect_gt(z_var, 0.5)
+  expect_lt(z_var, 1.5)
 })
 
 # --- Error handling ---

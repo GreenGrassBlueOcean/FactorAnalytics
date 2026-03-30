@@ -159,7 +159,12 @@ portVaRDecomp.tsfm <- function(object, weights = NULL, factor.cov, p=0.05, type=
 
   # factor returns and residuals data
   factors.xts <- object$data[,object$factor.names]
-  resid.xts <- xts::as.xts(t(t(residuals(object))/object$resid.sd) %*% weights)
+  # Portfolio residual pseudo-factor: z(t) = e_p(t) / sig_p
+  # where e_p(t) = sum(w_i * e_it) and sig_p = beta.star[,"Residuals"]
+  resid.xts <- xts::as.xts(
+    zoo::coredata(residuals(object)) %*% weights / beta.star[1, "Residuals"],
+    order.by = zoo::index(residuals(object))
+  )
   zoo::index(resid.xts) <- as.Date(zoo::index(resid.xts))
   
   if (type=="normal") {
@@ -298,7 +303,11 @@ portVaRDecomp.ffm <- function(object, weights = NULL, factor.cov, p=0.05, type=c
 
   # factor returns and residuals data
   factors.xts <- object$factor.returns
-  resid.xts <- xts::as.xts( t(t(residuals(object))/sqrt(object$resid.var)) %*% weights)
+  # Portfolio residual pseudo-factor: z(t) = e_p(t) / sig_p
+  resid.xts <- xts::as.xts(
+    zoo::coredata(residuals(object)) %*% weights / beta.star[1, "Residuals"],
+    order.by = zoo::index(residuals(object))
+  )
   zoo::index(resid.xts) <- as.Date(zoo::index(resid.xts))
 
   if (type=="normal") {

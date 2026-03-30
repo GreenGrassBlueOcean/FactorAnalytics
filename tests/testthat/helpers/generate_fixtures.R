@@ -241,7 +241,7 @@ save_fixture(list(
 message("\n--- portSdDecomp TSFM ---")
 port_sd_tsfm <- portSdDecomp(fit_tsfm_ls)
 save_fixture(list(
-  Sd.fm   = port_sd_tsfm$Sd.fm,
+  portSd  = port_sd_tsfm$portSd,
   mSd     = port_sd_tsfm$mSd,
   cSd     = port_sd_tsfm$cSd,
   pcSd    = port_sd_tsfm$pcSd
@@ -251,7 +251,7 @@ save_fixture(list(
 message("\n--- portVaRDecomp TSFM ---")
 port_var_tsfm <- portVaRDecomp(fit_tsfm_ls, p = 0.9, type = "normal")
 save_fixture(list(
-  VaR.fm  = port_var_tsfm$VaR.fm,
+  portVaR = port_var_tsfm$portVaR,
   mVaR    = port_var_tsfm$mVaR,
   cVaR    = port_var_tsfm$cVaR,
   pcVaR   = port_var_tsfm$pcVaR
@@ -261,37 +261,44 @@ save_fixture(list(
 message("\n--- portEsDecomp TSFM ---")
 port_es_tsfm <- portEsDecomp(fit_tsfm_ls, p = 0.9, type = "normal")
 save_fixture(list(
-  ES.fm   = port_es_tsfm$ES.fm,
+  portES  = port_es_tsfm$portES,
   mES     = port_es_tsfm$mES,
   cES     = port_es_tsfm$cES,
   pcES    = port_es_tsfm$pcES
 ), "fixture_portEsDecomp_tsfm")
 
-# --- 5d. portSdDecomp on FFM (with weights) ---
+# --- 5d. portSdDecomp on FFM ---
+# NOTE: test-portDecomp.R uses factorDataSetDjia5Yrs (style-only, no weights).
+# This fixture must match that model, not fit_ffm_wls.
 message("\n--- portSdDecomp FFM ---")
-port_sd_ffm <- portSdDecomp(fit_ffm_wls, wts145)
+fit_ffm_djia <- fitFfm(
+  data = factorDataSetDjia5Yrs,
+  asset.var = "TICKER", ret.var = "RETURN", date.var = "DATE",
+  exposure.vars = c("P2B", "EV2S")
+)
+port_sd_ffm <- portSdDecomp(fit_ffm_djia)
 save_fixture(list(
-  Sd.fm   = port_sd_ffm$Sd.fm,
+  portSd  = port_sd_ffm$portSd,
   mSd     = port_sd_ffm$mSd,
   cSd     = port_sd_ffm$cSd,
   pcSd    = port_sd_ffm$pcSd
 ), "fixture_portSdDecomp_ffm")
 
-# --- 5e. portVaRDecomp on FFM (with weights) ---
+# --- 5e. portVaRDecomp on FFM ---
 message("\n--- portVaRDecomp FFM ---")
-port_var_ffm <- portVaRDecomp(fit_ffm_wls, wts145, p = 0.9, type = "normal")
+port_var_ffm <- portVaRDecomp(fit_ffm_djia, p = 0.9, type = "normal")
 save_fixture(list(
-  VaR.fm  = port_var_ffm$VaR.fm,
+  portVaR = port_var_ffm$portVaR,
   mVaR    = port_var_ffm$mVaR,
   cVaR    = port_var_ffm$cVaR,
   pcVaR   = port_var_ffm$pcVaR
 ), "fixture_portVaRDecomp_ffm")
 
-# --- 5f. portEsDecomp on FFM (with weights) ---
+# --- 5f. portEsDecomp on FFM ---
 message("\n--- portEsDecomp FFM ---")
-port_es_ffm <- portEsDecomp(fit_ffm_wls, wts145, p = 0.9, type = "normal")
+port_es_ffm <- portEsDecomp(fit_ffm_djia, p = 0.9, type = "normal")
 save_fixture(list(
-  ES.fm   = port_es_ffm$ES.fm,
+  portES  = port_es_ffm$portES,
   mES     = port_es_ffm$mES,
   cES     = port_es_ffm$cES,
   pcES    = port_es_ffm$pcES

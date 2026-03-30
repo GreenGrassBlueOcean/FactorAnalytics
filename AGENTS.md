@@ -55,13 +55,61 @@ architecture reference are in:
   - `test-fitFfm-msci.R` — 135 assertions: MSCI model: LS/WLS/W-Rob × pure/style, downstream fmCov/VaR/ES, paFm decomposition identity, plot/print/summary (Phase 6)
   - `test-helpers-design-matrix.R` — 18 assertions: build_beta_star, build_restriction_matrix, apply_restriction unit tests + round-trip vs expand_newdata_ffm (Phase 7)
   - `test-helpers-extract-stats.R` — 22 assertions: build_factor_names (6 model configs + round-trip), map_coefficients_to_factor_returns (sector/MSCI/pure, exact match against fitted models) (Phase 8)
-- **Total:** 645 assertions across 22 test files, 0 failures, 0 skips.
+- **Total:** 657 assertions across 22 test files, 0 failures, 0 skips.
 - **Coverage:** 46.4% baseline (commit `4b58a6e`).
 - **Tolerances:** Coefficients/factor returns `1e-10`, covariance `1e-8`, risk decomp `1e-6`.
 - **Setup:** `tests/testthat/setup.R` loads all bundled datasets and prepares the
   `dat145` subset used across multiple test files.
 
 ## Known Bugs (Discovered & Fixed)
+
+### `portVaRDecomp()` / `portEsDecomp()` wrong portfolio residual normalization — FIXED
+
+**Severity:** High — systematically distorts factor vs. residual risk attribution.
+
+The augmented factor model decomposes portfolio return as:
+`R_p(t) = beta_p' f(t) + sigma_p * z(t)`
+where `z(t) = e_p(t) / sigma_p`, `e_p(t) = sum(w_i * e_it)`, and
+`sigma_p = sqrt(sum(w_i^2 * sigma_i^2))`.
+
+The upstream code computed the residual pseudo-factor as:
+`z(t) = sum(w_i * (e_it / sigma_i))`  ← WRONG (normalizes per-asset, then sums)
+
+The correct formula is:
+`z(t) = sum(w_i * e_it) / sqrt(sum(w_i^2 * sigma_i^2))`  ← CORRECT (sums raw, then normalizes)
+
+**Numerical impact (managers dataset, equal-weight portfolio):**
+- `Var(z_upstream)` ≈ 0.13 (should be ~1.0 for a unit-variance pseudo-factor)
+- `Var(z_correct)` ≈ 0.78 (close to 1.0; <1 due to NAs and finite sample)
+- Residual pcVaR: 23% (upstream) → 47% (correct) — a 24 percentage point shift
+
+**Affected code:** 4 methods in 2 files:
+- `portVaRDecomp.tsfm()` and `portVaRDecomp.ffm()` in `R/portVaRDecomp.R`
+- `portEsDecomp.tsfm()` and `portEsDecomp.ffm()` in `R/portEsDecomp.R`
+
+**NOT affected:**
+- Asset-level decomposition (`fmSdDecomp`, `fmVaRDecomp`, `fmEsDecomp`)
+- `portSdDecomp` (uses portfolio beta directly, not weighted residuals)
+- Model fitting (`fitTsfm`, `fitFfm`) — fitting is correct
+
+**Fix (applied):** In all 4 methods, replaced:
+```r
+resid.xts <- xts::as.xts(t(t(residuals(object))/object$resid.sd) %*% weights)
+```
+with:
+```r
+resid.xts <- xts::as.xts(
+  zoo::coredata(residuals(object)) %*% weights / beta.star[1, "Residuals"],
+  order.by = zoo::index(residuals(object))
+)
+```
+where `beta.star[1, "Residuals"]` is `sigma_p = sqrt(sum(w^2 * sigma^2))`,
+already computed earlier in the function.
+
+**Additional fix:** The `test-portDecomp.R` fixture names were mismatched
+(`$VaR.fm` vs actual `$portVaR`, etc.), causing 6 out of 24 fixture assertions
+to silently compare `NULL` to `NULL`. Corrected fixture names and regenerated
+all 6 portDecomp fixtures.
 
 ### `fmCov()` fails on FFM fits with character exposures (sector models) — FIXED
 

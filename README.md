@@ -25,8 +25,16 @@ test coverage while preserving full API compatibility.
 
 ### What changed
 
-**Bug fixes (13 pre-existing bugs found and fixed)**
+**Bug fixes (14 pre-existing bugs found and fixed)**
 
+- **`portVaRDecomp()` / `portEsDecomp()` wrong portfolio residual formula**
+  (upstream bug). The augmented factor model's residual pseudo-factor was
+  computed as `z(t) = sum(w_i * e_it / sigma_i)` instead of the correct
+  `z(t) = sum(w_i * e_it) / sqrt(sum(w_i^2 * sigma_i^2))`. This
+  systematically underweighted the residual risk contribution and inflated
+  factor risk attribution in portfolio-level VaR and ES decompositions.
+  Affects both `tsfm` and `ffm` methods. Asset-level decomposition and
+  `portSdDecomp` were not affected.
 - `fmCov()` crashed on sector models (wrong column lookup in `object$data`)
 - `paFm()` used legacy slot names and blindly dropped intercept columns
 - `extractRegressionStats()` broke on unbalanced panels (delisted assets)
@@ -58,7 +66,7 @@ Hard imports reduced from 18 to 6 (`data.table`, `lattice`, `methods`,
 
 **Test suite**
 
-605 assertions across 20 test files, 0 failures. Coverage increased from
+657 assertions across 22 test files, 0 failures. Coverage increased from
 ~0% to 46%. Tests cover model fitting, risk decomposition, performance
 attribution, input validation, unbalanced panels, and MSCI multi-country models.
 
