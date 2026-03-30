@@ -18,7 +18,7 @@ architecture reference are in:
 | **Phase 1 — Dependency Pruning** | ✅ Complete | Imports 18 → 6; 3 packages removed (`RCurl`, `doSNOW`, `foreach`); 12 moved to Suggests. 5 pre-existing bugs fixed. R CMD check clean. |
 | **Phase 2 — Performance** | ✅ Complete | 5 for-loops vectorized; `lm` objects stripped; R² extraction deduped; Robust EWMA bug fixed. 269 tests, 0 failures. Commit `3988d65`. |
 | **Phase 3 — API Hardening** | ✅ Complete | `predict.ffm` newdata expansion, `char_levels` slot. 294 assertions. Commits `2f81a1e`, `fde2aee`. ||
-| **Phase 4 — Testing & Bug Fixes** | ✅ Complete | Unbalanced panel bug fixed. fmCov invariants. Coverage expansion. PA integration test. xts churn profiled → deferred. 8 pre-existing bugs fixed. 458 assertions across 19 test files, 0 failures, 0 skips. Commit `7039a0a`. |
+| **Phase 4 — Testing & Bug Fixes** | ✅ Complete | Unbalanced panel bug fixed. fmCov invariants. Coverage expansion. PA integration test. xts churn profiled → closed (not a bottleneck). 8 pre-existing bugs fixed. 458 assertions across 19 test files, 0 failures, 0 skips. Commit `7039a0a`. |
 | **Phase 5 — Input Validation** | ✅ Complete | fitFfm/specFfm dedup (8 checks consolidated). Column-existence checks in specFfm + fitTsfm. `analysis` length bug fixed. fitTsfm.control duplicate + typo fixed. 470 assertions across 19 test files, 0 failures. |
 | **Phase 6 — MSCI Branch Testing** | ✅ Complete | MSCI+style extraction bug fixed. 135 MSCI-specific assertions (LS/WLS/W-Rob × pure/style, paFm, downstream methods). `print.tsfm` example fix. `return.cov`/`resid.cov`/`model.MSCI` added to ffm object. Fast CI. 605 assertions across 20 test files, 0 failures. R CMD check clean. |
 | **Phase 7 — Shared model.matrix Helper** | ✅ Complete | Extracted `build_beta_star`, `build_restriction_matrix`, `apply_restriction` helpers. 3 code sites → 1 source of truth for categorical design matrix pipeline. Dead code removed (`formula.expochar`, `formulaL`, `beta.expochar`, `beta1`/`beta2` columns). 623 assertions across 21 test files, 0 failures. R CMD check clean. |
@@ -329,6 +329,17 @@ All 5 row-by-row `set()` for-loops in `fitFfmDT.R` replaced:
 
 `convert.ffmSpec()` now reads `RegStatsObj$r2` directly instead of re-calling
 `summary()` on every stored `lm` object.
+
+### xts Conversion Churn — CLOSED (Not a bottleneck)
+
+Profiling on `stocks145scores6` (145 assets × 300 months, WLS + EWMA sector model)
+shows all `as.xts.data.table()` calls in `extractRegressionStats` combined cost ~5ms
+(0.4% of `fitFfm()` wall time). The fitting loop (`fitFfmDT`) dominates at 87% of
+wall time, with `lm()` × 300 cross-sections accounting for 48%. Within
+`extractRegressionStats`, the real bottleneck is `data.frame()` construction in
+data.table j-expressions (15% of total), not xts conversion. See `architecture.md`
+Section 4.7 for the full breakdown. Future performance work should target `lm()` →
+`.lm.fit()` or vectorized `:=` column extraction.
 
 ## R Package Standards
 

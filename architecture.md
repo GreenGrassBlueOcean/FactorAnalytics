@@ -459,38 +459,52 @@ during the Phase 1 `requireNamespace()` guard work.
    **Fix:** Type normalization at function entry converts `cum.spec.ret` to a named
    numeric vector; `unlist()` on `cum.ret.attr.f[i,]` before concatenation.
 
-### 4.7 xts Conversion Churn Evaluation (Phase 4.5) — Deferred
+### 4.7 xts Conversion Churn — ✅ CLOSED (Not a bottleneck)
 
-`extractRegressionStats` performs 6–10 `data.table::as.xts.data.table()` conversions
-to produce xts-format residuals, factor returns, weights, and IC series. Profiling on
-`stocks145scores6` (145 assets × 60 months, WLS + EWMA) shows this is **not a
-bottleneck worth refactoring**:
+Definitive profiling on `stocks145scores6` (145 assets × 300 months, WLS + EWMA
+sector model) shows xts conversion is negligible — **0.4% of total `fitFfm()`
+wall time**.
 
-| Metric | Value |
-|---|---|
-| `fitFfm` total wall-clock (median, 3 runs) | ~950ms |
-| `extractRegressionStats` total (Rprof) | 10.3% (~98ms) |
-| `as.xts.data.table` (Rprof, sampled at 5ms) | 1.2% (~11ms) |
-| Per-conversion micro-benchmark (dcast + as.xts) | ~15ms |
-| Estimated 7 conversions (upper bound) | ~105ms (~11%) |
+#### Full `fitFfm()` wall-time breakdown
 
-The Rprof-sampled 1.2% is the most reliable number because the micro-benchmark
-includes `dcast()` time (which would remain even after refactoring). The true xts
-wrapping cost is negligible.
+| Stage | Median | % of total |
+|---|---|---|
+| `specFfm` + `standardizeExposures` | 36 ms | 2.8% |
+| **`fitFfmDT` (fitting loop)** | **1,115 ms** | **87.2%** |
+| ​ ​ ​ ​ └─ `lm()` × 300 (model.frame + model.matrix + QR) | 615 ms | 48.1% |
+| ​ ​ ​ ​ └─ EWMA / data.table overhead | 499 ms | 39.0% |
+| **`extractRegressionStats`** | **246 ms** | **19.2%** |
+| ​ ​ ​ ​ └─ `data.frame()` in j-expressions (×300 groups) | 196 ms | 15.3% |
+| ​ ​ ​ ​ └─ xts conversions (all 4–5 combined) | 5 ms | 0.4% |
+| ​ ​ ​ ​ └─ `cov()` / matrix ops + `summary.lm` × 300 | 45 ms | 3.5% |
+| `convert` (assemble ffm object) | 8 ms | 0.6% |
+| **Total** | **~1,280 ms** | |
 
-The dominant cost centers are:
-- `lm()` fitting: 31% of wall-clock
-- `model.frame` / `model.matrix`: ~20%
-- `data.table` grouping and merge ops: bulk of the remaining time
+Benchmarked with `bench::mark()` (≥10 iterations per stage); internal breakdown
+via `Rprof()` at 5ms sampling interval.
 
-**Decision: Defer.** Refactoring `extractRegressionStats` to work in data.table
-throughout and convert to xts once at the boundary would touch all 3 model-type code
-paths (style-only, sector+style, MSCI) in a 300+ line function. The risk of
-introducing subtle ordering/naming regressions far outweighs the ~10ms actual gain.
+#### Key findings
 
-**When to revisit:** At STOXX 1800 scale (~1,800 assets × 120 months), if xts
-conversion time scales super-linearly and exceeds 25% of `fitFfm` wall-clock. Profile
-on production data before committing to refactoring.
+1. **The fitting loop dominates.** `fitFfmDT` is 87% of wall time. Within it,
+   `lm()` itself (model.frame + model.matrix + QR decomposition) accounts for
+   ~48%. The only way to meaningfully reduce this would be replacing `lm()` with
+   bare `.lm.fit()`, which would bypass formula parsing and model.frame
+   construction — a much larger change with real regression risk.
+
+2. **xts conversion is free.** All `as.xts.data.table()` calls combined cost
+   ~5ms (0.4% of total). Refactoring these would produce no measurable speedup.
+
+3. **The real `extractRegressionStats` bottleneck is `data.frame()`.** The
+   per-group `data.frame(date=..., id=..., value=residuals(...))` pattern inside
+   data.table j-expressions triggers R's `mode()`, `deparse()`, and
+   `as.data.frame.Date` machinery 300 times. This accounts for 15% of total
+   `fitFfm()` time (~196ms). Replacing with vectorized `:=` column extraction
+   would be the highest-payoff optimization in `extractRegressionStats`, but
+   at ~200ms total it is not urgent.
+
+**Decision: Closed.** No xts refactoring needed. If future performance work is
+warranted, the priority targets are `lm()` → `.lm.fit()` (48% of wall time) and
+`data.frame()` → vectorized `:=` in j-expressions (15% of wall time).
 
 ### 4.8 Monte Carlo Subsystem (Isolated)
 
@@ -717,11 +731,12 @@ Regression test in `test-vectorize.R` verifies `coef()`, `residuals()`, `fitted(
 extract R². Now reads `RegStatsObj$r2` directly (already computed in
 `extractRegressionStats()`).
 
-### 7.4 `xts` Conversion Churn (Remaining)
+### 7.4 `xts` Conversion Churn — ✅ CLOSED
 
-`extractRegressionStats()` converts intermediate data.table results to xts 6–10 times
-(residuals, factor returns, weights, g-coefficients, IC). `convert.ffmSpec()` then
-converts the data *back* to data.frame (line 1267). This is a Phase 3 candidate.
+`extractRegressionStats()` converts intermediate data.table results to xts 4–5 times
+(residuals, factor returns, weights, g-coefficients). Definitive profiling shows all
+xts conversions combined cost ~5ms (0.4% of `fitFfm()` wall time). Not worth
+refactoring. See Section 4.7 for the full breakdown.
 
 ---
 
