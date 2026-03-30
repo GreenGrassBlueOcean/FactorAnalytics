@@ -25,6 +25,7 @@ architecture reference are in:
 | **Phase 8 — extractRegressionStats Cleanup** | ✅ Complete | Extracted `build_factor_names` (6-way factor.names logic → 1 helper) + `map_coefficients_to_factor_returns` (sector/MSCI coefficient mapping dedup). `.()` → `list()` cleanup in `extractRegressionStats`. Dead NSE vars removed (`factor.returns1`, `factor.returns2`). 645 assertions across 22 test files, 0 failures. R CMD check clean. |
 | **Phase 9 — S3 Method Consolidation** | ✅ Complete | 4 shared risk helpers (`make_beta_star`, `make_factor_star_cov`, `normalize_fm_residuals`, `make_resid_diag`) in `R/helpers-risk.R`. Integrated into 8 files / 15+ methods. `fmSdDecomp.ffm` NA-zeroing inconsistency fixed. 690 assertions across 23 test files, 0 failures. R CMD check clean. |
 | **Phase 9.6 — riskDecomp Dispatcher** | ✅ Complete | `riskDecomp.R` 762→~200 lines: thin dispatcher to 6 specialized methods. Portfolio residual normalization bug eliminated from `repRisk` path. Orphaned `@importFrom` directives relocated to correct files. 67 dispatch assertions. 757 total assertions across 24 test files, 0 failures. R CMD check clean (0 errors, 0 warnings, 1 note). |
+| **Phase 9.7 — Branch 2/3 Unification** | ✅ Complete | `extractRegressionStats` branches 2 (sector) and 3 (MSCI) unified via 2 helpers (`extract_restricted_returns`, `build_last_period_beta`). ~90 lines → ~10 lines in caller. Branch 2 column ordering fixed (`factor.returns` now matches `factor.names` for all model types). `normalize_fm_residuals` POSIXct→Date timezone bug fixed. 782 assertions across 24 test files, 0 failures, 0 warnings. |
 
 ## Test Infrastructure
 
@@ -58,10 +59,10 @@ architecture reference are in:
   - `test-integration-pa.R` — 20 assertions: PortfolioAnalytics integration simulation (Phase 4.4)
   - `test-fitFfm-msci.R` — 135 assertions: MSCI model: LS/WLS/W-Rob × pure/style, downstream fmCov/VaR/ES, paFm decomposition identity, plot/print/summary (Phase 6)
   - `test-helpers-design-matrix.R` — 18 assertions: build_beta_star, build_restriction_matrix, apply_restriction unit tests + round-trip vs expand_newdata_ffm (Phase 7)
-  - `test-helpers-extract-stats.R` — 22 assertions: build_factor_names (6 model configs + round-trip), map_coefficients_to_factor_returns (sector/MSCI/pure, exact match against fitted models) (Phase 8)
+  - `test-helpers-extract-stats.R` — 47 assertions: build_factor_names (6 model configs + round-trip), map_coefficients_to_factor_returns (sector/MSCI/pure, exact match against fitted models) (Phase 8), extract_restricted_returns + build_last_period_beta structure tests, colnames(factor.returns)==factor.names invariant for all model types (Phase 9.7)
   - `test-helpers-risk.R` — 33 assertions: make_beta_star (asset/portfolio/ffm), make_factor_star_cov (structure/round-trip/NULL colnames), normalize_fm_residuals (asset/portfolio correctness), make_resid_diag (multi/single asset) (Phase 9)
   - `test-riskDecomp-dispatch.R` — 67 assertions: riskDecomp dispatch equivalence (Sd/VaR/ES × asset/port × tsfm/ffm), invert convention, input validation, repRisk smoke (Phase 9.6)
-- **Total:** 757 assertions across 24 test files, 0 failures, 0 skips.
+- **Total:** 782 assertions across 24 test files, 0 failures, 0 skips.
 - **Coverage:** 57.8% (post-Phase 9, commit `526d2c3`). Baseline was 46.4% at commit `4b58a6e`.
 - **Tolerances:** Coefficients/factor returns `1e-10`, covariance `1e-8`, risk decomp `1e-6`.
 - **Setup:** `tests/testthat/setup.R` loads all bundled datasets and prepares the
@@ -272,6 +273,31 @@ check in `fitTsfm()` exposed this (previously it silently fell through).
 
 **Fix:** Resolved automatically by switching to `make_beta_star()`, which always zeros
 NAs internally.
+
+### `normalize_fm_residuals()` POSIXct→Date timezone shift — FIXED (Phase 9.7)
+
+`normalize_fm_residuals()` converted the residual index to Date via
+`as.Date(zoo::index(z_xts))`. When the input had a `POSIXct` index with empty timezone
+attribute (common for `tsfm` residuals from the `managers` dataset), `as.Date()` used
+UTC, shifting dates back by one day on non-UTC systems. This caused `merge()` in
+`portVaRDecomp.tsfm` and `fmVaRDecomp.tsfm` to see completely non-overlapping date
+indices (132 + 120 = 252 rows instead of ~132), triggering "longer object length is not
+a multiple of shorter object length" warnings and producing incorrect kernel-weighted
+marginal VaR/ES estimates.
+
+**Fix:** Detect `POSIXct` index and use the stored timezone (or `Sys.timezone()` when
+the attribute is empty) for the `as.Date()` conversion.
+
+### `extractRegressionStats()` Branch 2 column ordering inconsistency — FIXED (Phase 9.7)
+
+Branch 2 (sector + intercept) of `extractRegressionStats()` built `fr_col_names` as
+`c("Market", cat_levels, style)` while `factor.names` (from `build_factor_names()`) was
+`c("Market", style, cat_levels)`. This mismatch required the post-hoc column reordering
+hack at lines 1128-1137 to realign `beta` with `factor.returns`. Branch 3 (MSCI) used
+`factor.names` directly and had no mismatch.
+
+**Fix:** Unified branches 2 and 3 into a single code path using `factor.names` for
+column ordering. The post-hoc cleanup code is now a no-op for intercept models.
 
 ## Performance Optimisations (Phase 2)
 

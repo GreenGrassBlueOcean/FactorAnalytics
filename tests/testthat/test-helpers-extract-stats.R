@@ -254,3 +254,127 @@ test_that("build_factor_names matches fitFfm factor.names for all model types", 
     exposure.vars = c("SECTOR", "P2B", "EV2S"), addIntercept = TRUE)
   expect_equal(FactorAnalytics:::build_factor_names(spec2), fit2$factor.names)
 })
+
+# --- extract_restricted_returns ---
+
+test_that("extract_restricted_returns: sector+style+intercept structure", {
+  fit <- fitFfm(
+    data = factorDataSetDjia5Yrs,
+    asset.var = "TICKER", ret.var = "RETURN", date.var = "DATE",
+    exposure.vars = c("SECTOR", "P2B", "EV2S"), addIntercept = TRUE
+  )
+  expect_equal(colnames(fit$factor.returns), fit$factor.names)
+  expect_true(!is.null(fit$g.cov))
+  expect_true(!is.null(fit$restriction.mat))
+  expect_equal(ncol(fit$factor.returns), length(fit$factor.names))
+  expect_equal(colnames(fit$factor.cov), fit$factor.names)
+})
+
+test_that("extract_restricted_returns: sector-only+intercept structure", {
+  fit <- fitFfm(
+    data = factorDataSetDjia5Yrs,
+    asset.var = "TICKER", ret.var = "RETURN", date.var = "DATE",
+    exposure.vars = "SECTOR", addIntercept = TRUE
+  )
+  expect_equal(colnames(fit$factor.returns), fit$factor.names)
+  expect_true(!is.null(fit$g.cov))
+  expect_true(!is.null(fit$restriction.mat))
+  expect_equal(ncol(fit$factor.returns), length(fit$factor.names))
+})
+
+test_that("extract_restricted_returns: MSCI+style structure", {
+  dat_m <- stocks145scores6[stocks145scores6$DATE >= as.Date("2012-01-01"), ]
+  sector_tickers <- split(
+    unique(dat_m$TICKER),
+    dat_m$SECTOR[match(unique(dat_m$TICKER), dat_m$TICKER)]
+  )
+  region_map <- do.call(rbind, lapply(names(sector_tickers), function(sec) {
+    tk <- sector_tickers[[sec]]
+    data.frame(TICKER = tk,
+               REGION = rep(c("NorthAm", "Europe"), length.out = length(tk)),
+               stringsAsFactors = FALSE)
+  }))
+  dat_m <- merge(dat_m, region_map, by = "TICKER")
+  dat_m <- dat_m[dat_m$SECTOR != "Telecommunications", ]
+
+  fit <- fitFfm(data = dat_m, asset.var = "TICKER", ret.var = "RETURN",
+                date.var = "DATE", exposure.vars = c("SECTOR", "REGION", "ROE", "BP"),
+                addIntercept = TRUE)
+  expect_equal(colnames(fit$factor.returns), fit$factor.names)
+  expect_true(!is.null(fit$g.cov))
+  expect_true(!is.null(fit$restriction.mat))
+  expect_equal(ncol(fit$factor.returns), length(fit$factor.names))
+  expect_equal(colnames(fit$factor.cov), fit$factor.names)
+})
+
+# --- build_last_period_beta ---
+
+test_that("build_last_period_beta: sector+style beta dimensions and names", {
+  fit <- fitFfm(
+    data = factorDataSetDjia5Yrs,
+    asset.var = "TICKER", ret.var = "RETURN", date.var = "DATE",
+    exposure.vars = c("SECTOR", "P2B", "EV2S"), addIntercept = TRUE
+  )
+  expect_equal(colnames(fit$beta), fit$factor.names)
+  expect_equal(nrow(fit$beta), length(fit$asset.names))
+  expect_equal(rownames(fit$beta), fit$asset.names)
+  # beta and factor.returns must be column-aligned
+  expect_equal(colnames(fit$beta), colnames(fit$factor.returns))
+})
+
+test_that("build_last_period_beta: MSCI+style beta dimensions and names", {
+  dat_m <- stocks145scores6[stocks145scores6$DATE >= as.Date("2012-01-01"), ]
+  sector_tickers <- split(
+    unique(dat_m$TICKER),
+    dat_m$SECTOR[match(unique(dat_m$TICKER), dat_m$TICKER)]
+  )
+  region_map <- do.call(rbind, lapply(names(sector_tickers), function(sec) {
+    tk <- sector_tickers[[sec]]
+    data.frame(TICKER = tk,
+               REGION = rep(c("NorthAm", "Europe"), length.out = length(tk)),
+               stringsAsFactors = FALSE)
+  }))
+  dat_m <- merge(dat_m, region_map, by = "TICKER")
+  dat_m <- dat_m[dat_m$SECTOR != "Telecommunications", ]
+
+  fit <- fitFfm(data = dat_m, asset.var = "TICKER", ret.var = "RETURN",
+                date.var = "DATE", exposure.vars = c("SECTOR", "REGION", "ROE", "BP"),
+                addIntercept = TRUE)
+  expect_equal(colnames(fit$beta), fit$factor.names)
+  expect_equal(nrow(fit$beta), length(fit$asset.names))
+  # beta and factor.returns must be column-aligned
+  expect_equal(colnames(fit$beta), colnames(fit$factor.returns))
+})
+
+# --- Column ordering invariant: all model types ---
+
+test_that("colnames(factor.returns) == factor.names for all model types", {
+  # Branch 1: style-only
+  fit1 <- fitFfm(data = factorDataSetDjia5Yrs,
+                 asset.var = "TICKER", ret.var = "RETURN", date.var = "DATE",
+                 exposure.vars = c("P2B", "EV2S"))
+  expect_equal(colnames(fit1$factor.returns), fit1$factor.names,
+               info = "style-only")
+
+  # Branch 1: sector+style, no intercept
+  fit2 <- fitFfm(data = dat145,
+                 exposure.vars = c("SECTOR", "ROE", "BP", "PM12M1M", "SIZE", "ANNVOL1M", "EP"),
+                 date.var = "DATE", ret.var = "RETURN", asset.var = "TICKER",
+                 fit.method = "WLS", z.score = "crossSection")
+  expect_equal(colnames(fit2$factor.returns), fit2$factor.names,
+               info = "WLS sector+style no-intercept")
+
+  # Branch 2: sector+style+intercept (unified path)
+  fit3 <- fitFfm(data = factorDataSetDjia5Yrs,
+                 asset.var = "TICKER", ret.var = "RETURN", date.var = "DATE",
+                 exposure.vars = c("SECTOR", "P2B", "EV2S"), addIntercept = TRUE)
+  expect_equal(colnames(fit3$factor.returns), fit3$factor.names,
+               info = "sector+style+intercept")
+
+  # Branch 2: sector-only+intercept (unified path)
+  fit4 <- fitFfm(data = factorDataSetDjia5Yrs,
+                 asset.var = "TICKER", ret.var = "RETURN", date.var = "DATE",
+                 exposure.vars = "SECTOR", addIntercept = TRUE)
+  expect_equal(colnames(fit4$factor.returns), fit4$factor.names,
+               info = "sector-only+intercept")
+})

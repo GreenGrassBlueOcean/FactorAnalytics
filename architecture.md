@@ -169,6 +169,20 @@ Used in `extractRegressionStats()` — replaces duplicated coefficient mapping i
 sector and MSCI branches. The style-only branch uses `build_factor_names` only (no
 restriction matrix involved).
 
+### 2.5b Shared extractRegressionStats Helpers (Phase 9.7)
+
+Two additional unexported helpers unify the formerly-duplicated branches 2 (sector +
+intercept) and 3 (MSCI) of `extractRegressionStats()`:
+
+| Helper | Line | Purpose |
+|---|---|---|
+| `extract_restricted_returns(reg.listDT, betasDT, d_, factor.names)` | 144 | Extracts regression coefficients, maps V-coefficients to factor space via `map_coefficients_to_factor_returns()`, computes g.cov, returns factor.returns xts + g.cov + restriction.mat |
+| `build_last_period_beta(betasDT, specObj, asset.names, factor.names, d_)` | 186 | Assembles last-period beta and beta.stms matrices, handles sector/MSCI column naming and style exposure source differences |
+
+After unification, `extractRegressionStats()` has two branches instead of three:
+- Branch 1: no intercept or style-only → direct coefficient extraction
+- Branch 2+3 (unified): intercept + categorical → calls both helpers (~10 lines)
+
 ### 2.6 Shared Risk Helpers (Phase 9)
 
 Four unexported helpers in `R/helpers-risk.R` consolidate the "augmented factor model"
@@ -199,11 +213,10 @@ riskDecomp convention (`!invert` → negate risk/marginal/component) post-hoc.
 
 `repRisk()` calls `riskDecomp()` at ~20 call sites, making it the primary consumer.
 
-**Known inconsistency (sector branch):** For sector+style models with intercept,
-`factor.names` order is `c("Market", style, categorical)` but `colnames(factor.returns)`
-and `colnames(beta)` are `c("Market", categorical, style)`. A reconciliation step at the
-end of `extractRegressionStats()` reorders `beta` to match `colnames(factor.returns)`.
-The MSCI branch does not have this inconsistency — both orders match `factor.names`.
+**Column ordering (Phase 9.7 fix):** Prior to Phase 9.7, the sector branch produced
+`factor.returns` in `c("Market", categorical, style)` order while `factor.names` was
+`c("Market", style, categorical)`, requiring a post-hoc reconciliation step. After
+unification, all branches produce `factor.returns` in `factor.names` order.
 
 ---
 

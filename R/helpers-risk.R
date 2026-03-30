@@ -81,7 +81,14 @@ normalize_fm_residuals <- function(resid_mat, resid_sd, weights = NULL) {
     z <- zoo::coredata(resid_mat) %*% weights / sig_p
   }
   z_xts <- xts::as.xts(z, order.by = zoo::index(resid_mat))
-  zoo::index(z_xts) <- as.Date(zoo::index(z_xts))
+  idx <- zoo::index(resid_mat)
+  if (inherits(idx, "POSIXct")) {
+    tz_use <- attr(idx, "tzone")
+    if (is.null(tz_use) || !nzchar(tz_use)) tz_use <- Sys.timezone()
+    zoo::index(z_xts) <- as.Date(zoo::index(z_xts), tz = tz_use)
+  } else {
+    zoo::index(z_xts) <- as.Date(zoo::index(z_xts))
+  }
   z_xts
 }
 
