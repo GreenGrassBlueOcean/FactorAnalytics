@@ -25,7 +25,7 @@ test coverage while preserving full API compatibility.
 
 ### What changed
 
-**Bug fixes (14 pre-existing bugs found and fixed)**
+**Bug fixes (16 pre-existing bugs found and fixed)**
 
 - **`portVaRDecomp()` / `portEsDecomp()` wrong portfolio residual formula**
   (upstream bug). The augmented factor model's residual pseudo-factor was
@@ -43,6 +43,11 @@ test coverage while preserving full API compatibility.
   non-conformable matrix errors — style coefficients were not separated
   before restriction-matrix multiplication
 - Robust EWMA weighting referenced a non-existent column, producing `NA` weights
+- `normalize_fm_residuals()` converted `POSIXct` residual dates using UTC instead
+  of the stored timezone, shifting dates back by one day on non-UTC systems and
+  producing incorrect kernel-weighted marginal VaR/ES estimates
+- Sector+intercept models produced `factor.returns` columns in a different order
+  than `factor.names`, requiring a fragile post-hoc reordering step
 - Several more — see [AGENTS.md](AGENTS.md) for the full list
 
 **Performance**
@@ -64,10 +69,18 @@ Hard imports reduced from 18 to 6 (`data.table`, `lattice`, `methods`,
 - Column-existence checks with clear error messages in `fitFfm()` and `fitTsfm()`
 - Duplicate validation between `fitFfm()` and `specFfm()` consolidated
 
+**Internal architecture**
+
+- `riskDecomp()` converted from a 762-line monolith to a thin dispatcher
+  routing to 6 specialized methods — single source of truth for all risk math
+- `extractRegressionStats()` sector and MSCI branches unified via shared
+  helpers, reducing ~100 lines of duplicated coefficient-mapping code to ~10
+- 9 shared helper functions extracted across the codebase, each with unit tests
+
 **Test suite**
 
-657 assertions across 22 test files, 0 failures. Coverage increased from
-~0% to 46%. Tests cover model fitting, risk decomposition, performance
+782 assertions across 24 test files, 0 failures. Coverage increased from
+~0% to 57.8%. Tests cover model fitting, risk decomposition, performance
 attribution, input validation, unbalanced panels, and MSCI multi-country models.
 
 **CI**
@@ -197,7 +210,7 @@ fit_msci$factor.names  # Market, ROE, BP, sector levels..., country levels...
 | **Model fitting** | `fitFfm()`, `fitTsfm()`, `fitTsfmUpDn()` |
 | **Covariance** | `fmCov()` |
 | **Risk decomposition** | `fmSdDecomp()`, `fmVaRDecomp()`, `fmEsDecomp()` |
-| **Portfolio risk** | `portSdDecomp()`, `portVaRDecomp()`, `portEsDecomp()` |
+| **Portfolio risk** | `portSdDecomp()`, `portVaRDecomp()`, `portEsDecomp()`, `riskDecomp()` |
 | **Attribution** | `paFm()`, `repReturn()`, `repRisk()` |
 | **Diagnostics** | `fmRsq()`, `fmTstats()`, `vif()` |
 | **S3 methods** | `plot()`, `summary()`, `predict()`, `coef()` |
