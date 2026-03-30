@@ -73,6 +73,74 @@ apply_restriction <- function(beta_star, R_matrix) {
   B_mod
 }
 
+# Build factor names vector for the fitted model.
+# Handles all reachable cases across the three extractRegressionStats branches:
+#   - no intercept + char exposure(s) → c(style, categorical_levels)
+#   - style-only + intercept          → c("Alpha", style)
+#   - style-only, no intercept        → style
+#   - sector+style + intercept        → c("Market", style, categorical_levels)
+#   - MSCI + intercept                → c("Market", style, all_categorical_levels)
+#
+# @param specObj ffmSpec object from specFfm()
+# @return character vector of factor names
+build_factor_names <- function(specObj) {
+  has_char <- length(specObj$exposures.char) > 0L
+
+  if (!specObj$addIntercept || specObj$model.styleOnly) {
+    if (has_char) {
+      lvl <- paste(levels(
+        specObj$dataDT[, specObj$exposures.char, with = FALSE][[1L]]
+      ), sep = "")
+      c(specObj$exposures.num, lvl)
+    } else if (specObj$addIntercept) {
+      c("Alpha", specObj$exposures.num)
+    } else {
+      specObj$exposures.num
+    }
+  } else if (!specObj$model.MSCI) {
+    lvl <- paste(levels(
+      specObj$dataDT[, specObj$exposures.char, with = FALSE][[1L]]
+    ), sep = "")
+    c("Market", specObj$exposures.num, lvl)
+  } else {
+    lvl <- unlist(sapply(
+      specObj$dataDT[, .SD, .SDcols = specObj$exposures.char], levels
+    ))
+    c("Market", specObj$exposures.num, paste(lvl, sep = ""))
+  }
+}
+
+# Map restricted V-coefficients back to the original factor return space.
+# Shared by sector (branch 2) and MSCI (branch 3) paths in
+# extractRegressionStats where R_matrix links restricted coefficients
+# to the full set of Market + categorical + style factor returns.
+#
+# @param g_row numeric vector of regression coefficients
+#   (V1..VK_cat, then style coefficients if any)
+# @param R_matrix restriction matrix from build_restriction_matrix()
+# @param K_cat integer: number of restricted (V) coefficients = ncol(R_matrix)
+# @param col_names character vector of output names in desired column order.
+#   Length must equal nrow(R_matrix) + length(style coefficients).
+# @return named numeric vector in col_names order
+map_coefficients_to_factor_returns <- function(g_row, R_matrix, K_cat, col_names) {
+  mapped_cat <- as.numeric(R_matrix %*% g_row[seq_len(K_cat)])
+
+  if (length(g_row) > K_cat) {
+    g_style <- g_row[(K_cat + 1L):length(g_row)]
+    style_nm <- names(g_style)
+    cat_nm <- setdiff(col_names, c("Market", style_nm))
+    result <- numeric(length(col_names))
+    names(result) <- col_names
+    result["Market"] <- mapped_cat[1L]
+    result[cat_nm] <- mapped_cat[-1L]
+    result[style_nm] <- unname(g_style)
+  } else {
+    result <- mapped_cat
+    names(result) <- col_names
+  }
+  result
+}
+
 #' @title Specifies the elements of a fundamental factor model
 #'
 #' @description Factor models have a few parameters that describe how the
@@ -815,7 +883,7 @@ fitFfmDT <- function(ffMSpecObj,
 extractRegressionStats <- function(specObj, fitResults, full.resid.cov=FALSE){
 
   # Due to NSE notes related to data.table in R CMD check
-  . = reg.list = id = R_matrix = factor.returns1 = factor.returns2 = B.mod = beta.mic = NULL
+  reg.list <- id <- R_matrix <- B.mod <- beta.mic <- w <- NULL
   # See data.table "Importing data.table" vignette
 
   restriction.mat = NULL
@@ -830,12 +898,12 @@ extractRegressionStats <- function(specObj, fitResults, full.resid.cov=FALSE){
   fit.method <- fitResults$fit.method
 
   # r-squared values for each time period ----
-  r2 <- reg.listDT[, .(r2 = .(summary(reg.list[[1]])$r.squared)), by = d_]
+  r2 <- reg.listDT[, list(r2 = list(summary(reg.list[[1]])$r.squared)), by = d_]
   r2 <- unlist(r2$r2)
   names(r2) <- reg.listDT[[d_]]
 
   # residuals ----
-  reg.listDT[, residuals := .(.(data.frame(date = get(d_), id = id,
+  reg.listDT[, residuals := list(list(data.frame(date = get(d_), id = id,
                                            residuals = residuals(reg.list[[1]])))), by = d_]
   # now we have to extract the asset level residuals series and get their time series variance or
   # robust stats
@@ -858,7 +926,7 @@ extractRegressionStats <- function(specObj, fitResults, full.resid.cov=FALSE){
   # Resdiuals ----
   #if resid.scaleType is not stdDev, use the most recent residual var as the diagonal cov-var of residuals
   if (grepl("W",fit.method)){
-    reg.listDT[, w := .(.(data.frame(date = get(d_)[[1]], id = reg.listDT$id[[1]],
+    reg.listDT[, w := list(list(data.frame(date = get(d_)[[1]], id = reg.listDT$id[[1]],
                                      w = w[[1]]))), by = d_]
     w <- data.table::rbindlist(l = reg.listDT$w)
     w <- data.table::dcast(data = w , formula = date ~ id, value.var = "w")
@@ -901,25 +969,13 @@ extractRegressionStats <- function(specObj, fitResults, full.resid.cov=FALSE){
   }
 
 
+  factor.names <- build_factor_names(specObj)
+
   if (specObj$addIntercept == FALSE || specObj$model.styleOnly ==TRUE) {
-    # number of factors including Market and dummy variables
-    if (length(specObj$exposures.char)) {
-      factor.names <- c(specObj$exposures.num,
-                        paste(levels(specObj$dataDT[,specObj$exposures.char, with = F][[1]]),sep=""))
-    } else {
-      if(specObj$addIntercept) {
-        factor.names <- c("Alpha", specObj$exposures.num)
-      }
-      else{
-        factor.names <- specObj$exposures.num
-      }
-
-    }
-
 
     # coefficients ----
 
-    reg.listDT[, factor.returns := .(.(data.frame(date = get(d_)[[1]], factor.names = .(factor.names),
+    reg.listDT[, factor.returns := list(list(data.frame(date = get(d_)[[1]], factor.names = list(factor.names),
                                                   factor.returns = coefficients(reg.list[[1]])))), by = d_]
 
     # now we have to extract the asset level residuals series and get their time series variance or
@@ -937,61 +993,36 @@ extractRegressionStats <- function(specObj, fitResults, full.resid.cov=FALSE){
 
 
   } else if ( specObj$addIntercept && specObj$model.styleOnly == FALSE && !specObj$model.MSCI) {
-    if (length(specObj$exposures.char)) {
-      if(specObj$addIntercept) {
-        factor.names <- c("Market", specObj$exposures.num,
-                          paste(levels(specObj$dataDT[,specObj$exposures.char, with = F][[1]]),sep=""))
-      } else {
-        factor.names <- c(specObj$exposures.num,
-                          paste(levels(specObj$dataDT[,specObj$exposures.char, with = F][[1]]),sep=""))
-      }
-
-    } else {
-      if(specObj$addIntercept) {
-        factor.names <- c("Alpha", specObj$exposures.num)
-      } else {
-        factor.names <- specObj$exposures.num
-      }
-
-    }
-
 
     # coefficients ----
 
-    g <- reg.listDT[, .(g = .(coefficients(reg.list[[1]]))), by = d_]
+    g <- reg.listDT[, list(g = list(coefficients(reg.list[[1]]))), by = d_]
     data.table::setkeyv(g, d_)
-    #factor returns = restriction matrix * g coefficients
-    factor.returns <- betasDT[, c(d_ ,"R_matrix"), with = F][g]
+    factor.returns <- betasDT[, c(d_, "R_matrix"), with = FALSE][g]
 
-    g <- g[, .(.(data.frame(date = get(d_)[[1]], t(g[[1]])))), by = d_]
+    g <- g[, list(list(data.frame(date = get(d_)[[1]], t(g[[1]])))), by = d_]
     g <- data.table::rbindlist(g$V1)
     g <- data.table::as.xts.data.table(g)
     g.cov <- cov(g)
-    K <- length(levels(specObj$dataDT[[specObj$exposures.char]]))
-    # the first matrix contains the categorical variables that had the
-    # restriction matrix applied to the second is the style variables
-    if (length(specObj$exposures.num)) {
-      factor.returns <- factor.returns[, .(factor.returns1 = .(R_matrix[[1]] %*% g[[1]][1:K]),
-                                           factor.returns2 = .(g[[1]][(K+1): length(g[[1]])])), by = d_]
 
-      factor.returns[, factor.returns := .(.(matrix(c(factor.returns1[[1]],
-                                                      factor.returns2[[1]]), nrow = 1,
-                                                    dimnames = list(date = eval(d_)[[1]],
-                                                                    factors = c("Market",
-                                                                                levels(specObj$dataDT[[specObj$exposures.char]]),
-                                                                                names(factor.returns2[[1]])
-                                                                    ))))), by = d_]
-
+    K <- ncol(betasDT[1, ]$R_matrix[[1]])
+    # Sector branch column order: Market, categorical levels, then style
+    cat_levels <- levels(specObj$dataDT[[specObj$exposures.char]])
+    fr_col_names <- if (length(specObj$exposures.num)) {
+      c("Market", cat_levels, specObj$exposures.num)
     } else {
-      factor.returns <- factor.returns[, .(factor.returns1 = .(R_matrix[[1]] %*% g[[1]][1:K])), by = d_]
-      factor.returns[, factor.returns := .(.(matrix(c(factor.returns1[[1]]), nrow = 1,
-                                                    dimnames = list(date = eval(d_)[[1]],
-                                                                    factors = c("Market",
-                                                                                levels(specObj$dataDT[[specObj$exposures.char]]))
-                                                    )))), by = d_]
+      c("Market", cat_levels)
     }
 
-    factor.returns[ , factor.returns := .(.(data.frame(date = get(d_)[[1]], factor.returns[[1]]))), by = d_]
+    factor.returns[, factor.returns := list(list(matrix(
+      map_coefficients_to_factor_returns(g[[1]], R_matrix[[1]], K, fr_col_names),
+      nrow = 1,
+      dimnames = list(date = eval(d_)[[1]], factors = fr_col_names)
+    ))), by = d_]
+
+    factor.returns[, factor.returns := list(list(
+      data.frame(date = get(d_)[[1]], factor.returns[[1]])
+    )), by = d_]
     factor.returns <- data.table::rbindlist(factor.returns$factor.returns)
     factor.returns <- data.table::as.xts.data.table(factor.returns)
 
@@ -1020,49 +1051,23 @@ extractRegressionStats <- function(specObj, fitResults, full.resid.cov=FALSE){
 
   } else {
     # msci — model with 2+ character exposures (e.g. Sector + Country)
-    lvl <- unlist(sapply(specObj$dataDT[, .SD, .SDcols = specObj$exposures.char], levels))
 
-    factor.names <- c("Market", specObj$exposures.num, paste(lvl, sep = ""))
-
-    g <- reg.listDT[, .(g = .(coefficients(reg.list[[1]]))), by = d_]
+    g <- reg.listDT[, list(g = list(coefficients(reg.list[[1]]))), by = d_]
     data.table::setkeyv(g, d_)
-    #factor returns = restriction matrix * g coefficients
     factor.returns <- betasDT[, c(d_, "R_matrix"), with = FALSE][g]
 
-    g <- g[, .(.(data.frame(date = get(d_)[[1]], t(g[[1]])))), by = d_]
+    g <- g[, list(list(data.frame(date = get(d_)[[1]], t(g[[1]])))), by = d_]
     g <- data.table::rbindlist(g$V1)
     g <- data.table::as.xts.data.table(g)
     g.cov <- cov(g)
 
-    # K_cat = number of transformed categorical coefficients = ncol(R_matrix)
-    # R_matrix is (K1+K2+1) x (K1+K2-1); only these first K_cat coefficients
-    # should be multiplied by R_matrix. Style coefficients come after.
-    K_cat <- betasDT[1, ]$K1[[1]] + betasDT[1, ]$K2[[1]] - 1L
+    K_cat <- ncol(betasDT[1, ]$R_matrix[[1]])
 
-    if (length(specObj$exposures.num) > 0) {
-      # Separate categorical and style coefficients before R_matrix multiplication
-      factor.returns <- factor.returns[, list(
-        factor.returns1 = list(R_matrix[[1]] %*% g[[1]][1:K_cat]),
-        factor.returns2 = list(g[[1]][(K_cat + 1):length(g[[1]])])
-      ), by = d_]
-
-      # Reorder to match factor.names: Market, style, categorical_levels
-      factor.returns[, factor.returns := list(list(matrix(
-        c(factor.returns1[[1]][1],
-          factor.returns2[[1]],
-          factor.returns1[[1]][-1]),
-        nrow = 1,
-        dimnames = list(date = eval(d_)[[1]], factors = factor.names)
-      ))), by = d_]
-    } else {
-      factor.returns <- factor.returns[, list(
-        factor.returns1 = list(R_matrix[[1]] %*% g[[1]][1:K_cat])
-      ), by = d_]
-      factor.returns[, factor.returns := list(list(matrix(
-        c(factor.returns1[[1]]), nrow = 1,
-        dimnames = list(date = eval(d_)[[1]], factors = factor.names)
-      ))), by = d_]
-    }
+    factor.returns[, factor.returns := list(list(matrix(
+      map_coefficients_to_factor_returns(g[[1]], R_matrix[[1]], K_cat, factor.names),
+      nrow = 1,
+      dimnames = list(date = eval(d_)[[1]], factors = factor.names)
+    ))), by = d_]
 
     factor.returns[, factor.returns := list(list(
       data.frame(date = get(d_)[[1]], factor.returns[[1]])
