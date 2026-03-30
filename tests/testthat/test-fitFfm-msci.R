@@ -42,8 +42,6 @@ test_that("MSCI pure 2-char model fits and has correct structure", {
                 addIntercept = TRUE)
 
   expect_s3_class(fit, "ffm")
-  # model.MSCI lives on the spec, not the final object; verify via exposures.char
-
   expect_equal(length(fit$exposures.char), 2)
 
   # factor.names: Market + all sector levels + all region levels
@@ -76,6 +74,12 @@ test_that("MSCI pure 2-char model fits and has correct structure", {
   cov_mat <- fmCov(fit)
   eig <- eigen(cov_mat, symmetric = TRUE, only.values = TRUE)$values
   expect_true(all(eig >= -1e-10))
+
+  # return.cov and model.MSCI stored on the object
+  expect_true(fit$model.MSCI)
+  expect_equal(dim(fit$return.cov), c(n_assets, n_assets))
+  expect_true(isSymmetric(fit$return.cov))
+  expect_false(is.null(fit$resid.cov))
 })
 
 # ── 2. MSCI + style model (2 char + numeric exposures) ──
@@ -87,6 +91,7 @@ test_that("MSCI 2-char + style model fits and has correct structure", {
                 addIntercept = TRUE)
 
   expect_s3_class(fit, "ffm")
+  expect_true(fit$model.MSCI)
   expect_equal(length(fit$exposures.char), 2)
 
   # factor.names: Market + style vars + sector levels + region levels

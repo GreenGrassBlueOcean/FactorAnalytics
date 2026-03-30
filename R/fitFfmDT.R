@@ -1457,6 +1457,9 @@ convert.ffmSpec <- function(SpecObj, FitObj, RegStatsObj, ...) {
   ffmObj$resid.var <- RegStatsObj$resid.var
   ffmObj$residuals <- RegStatsObj$residuals
   ffmObj$g.cov <- RegStatsObj$g.cov
+  ffmObj$return.cov <- RegStatsObj$return.cov
+  ffmObj$resid.cov <- RegStatsObj$resid.cov
+  ffmObj$model.MSCI <- isTRUE(SpecObj$model.MSCI)
 
   # clean up
 
