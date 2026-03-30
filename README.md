@@ -1,51 +1,214 @@
 
-# Factor Analytics for asset return data
+# FactorAnalytics <img src="man/figures/logo.png" align="right" height="139" />
 
-[![R-CMD-check](https://github.com/GreenGrassBlueOcean/FactorAnalytics/actions/workflows/slack-notify-build.yml/badge.svg)](https://github.com/GreenGrassBlueOcean/FactorAnalytics/actions/workflows/slack-notify-build.yml)
+<!-- badges -->
+[![R-CMD-check](https://github.com/GreenGrassBlueOcean/FactorAnalytics/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/GreenGrassBlueOcean/FactorAnalytics/actions/workflows/R-CMD-check.yaml)
 [![codecov](https://codecov.io/gh/GreenGrassBlueOcean/FactorAnalytics/graph/badge.svg)](https://codecov.io/gh/GreenGrassBlueOcean/FactorAnalytics)
 
-The FactorAnalytics project is an open source package containing fitting and analysis methods for the three main types of factor models commonly used in conjunction with portfolio construction, optimization and risk management. These include:
-- fundamental factor models
-- time series factor models
-- statistical factor models
+Linear factor models for asset return data: fitting, risk decomposition,
+and performance attribution. Covers the three major model types used in
+portfolio construction and risk management:
 
-The purpose of this project is to provide basic features and capabilities close to those of commercial portfolio optimization and risk management products.
+| Model | Entry point | Class | Use case |
+|-------|-------------|-------|----------|
+| **Fundamental** (cross-sectional) | `fitFfm()` | `ffm` | Sector/style risk models, MSCI-type multi-country models |
+| **Time series** | `fitTsfm()` | `tsfm` | Macro factor models, market timing |
+| **Statistical** (PCA) | `fitSfm()` | `sfm` | Latent factor discovery |
 
-In addition, the package contains functions for related risk and performance attribution estimates including:
-- volatility
-- VaR
-- ES
-- factor-contributed vs idiosyncratic returns
-- factor model Monte Carlo
-- multiple imputation methods for simulating returns and backfilling unequal histories
-- functions to create tabular displays of risk and performance reports
+## About this fork
 
-## Installing FactorAnalytics
+This is the [GreenGrassBlueOcean](https://github.com/GreenGrassBlueOcean/FactorAnalytics)
+fork of [braverock/FactorAnalytics](https://github.com/braverock/FactorAnalytics) (v2.4.2).
+The upstream package has been used in production at investment firms for over a decade.
+This fork applies a systematic refactoring focused on reliability, performance, and
+test coverage while preserving full API compatibility.
 
-Install from source is the preferred method of installation. To do so, your local git installation will need to support **git large file storage (LFS)**. Instruction for installing LFS can be found **[HERE](https://docs.github.com/en/github/managing-large-files/versioning-large-files/installing-git-large-file-storage)**
+### What changed
 
-Plenty of documentation exists for cloning github repos and building R packages locally. A simple search specifying your IDE and OS should do.
+**Bug fixes (13 pre-existing bugs found and fixed)**
 
-Note a bug in `remotes`/`devtools` prevents the package from being loaded using `install_github("braverock/FactorAnalytics")`. Please see [r-lib/remotes/issues/637](https://github.com/r-lib/remotes/issues/637).
+- `fmCov()` crashed on sector models (wrong column lookup in `object$data`)
+- `paFm()` used legacy slot names and blindly dropped intercept columns
+- `extractRegressionStats()` broke on unbalanced panels (delisted assets)
+- `fitFfm()` validated the wrong parameter (`z.score` instead of `analysis`)
+- MSCI models (2+ character exposures) with style variables produced
+  non-conformable matrix errors — style coefficients were not separated
+  before restriction-matrix multiplication
+- Robust EWMA weighting referenced a non-existent column, producing `NA` weights
+- Several more — see [AGENTS.md](AGENTS.md) for the full list
 
+**Performance**
 
-## Presentations and vignettes on FactorAnalytics
+- 5 row-by-row `for`/`set()` loops replaced with vectorized `stats::filter()`
+  and `Reduce()` (EWMA/GARCH recursions)
+- `lm` objects stripped of hidden environment references and redundant slots,
+  preventing ~120 silent copies of the panel at STOXX 1800 scale
+- R² extraction deduped (was re-calling `summary()` on every stored `lm`)
 
-### Fundamental Factor Models vignette
+**Dependency pruning**
 
-From the first paragraph
+Hard imports reduced from 18 to 6 (`data.table`, `lattice`, `methods`,
+`PerformanceAnalytics`, `xts`, `zoo`). 12 packages moved to Suggests;
+3 removed entirely (`RCurl`, `doSNOW`, `foreach`).
 
-_The overarching long-term goal of the fundamental factor model (Ffm) development in the FactorAnalytics packages is to replicate a large proportion of the non-proprietary models and model fitting and analysis methodology that is contained in commercial portfolio construction and risk management products such as MSCI Barra, Axioma, Northfield, etc. Furthermore our goals include the implementation cutting edge methods to support portfolio construction and risk management that are not much available in commercial products, such as global optimization, unequal histories and other missing data handling, highly robust covariance matrix estimators and their application to multivariate exposures and returns outliers, optimal bias robust regression, factor model Monte Carlo, new methods for handling serial correlation that improve upon traditional HAC methods, etc._
+**Input validation**
 
-https://github.com/braverock/FactorAnalytics/blob/master/vignettes/Fundamental-Factor-Models-FactorAnalytics.pdf
+- Column-existence checks with clear error messages in `fitFfm()` and `fitTsfm()`
+- Duplicate validation between `fitFfm()` and `specFfm()` consolidated
 
+**Test suite**
 
-### R/Finance 2017, Chicago
+605 assertions across 20 test files, 0 failures. Coverage increased from
+~0% to 46%. Tests cover model fitting, risk decomposition, performance
+attribution, input validation, unbalanced panels, and MSCI multi-country models.
 
-[R Script](https://www.dropbox.com/s/jv809g196iyqo0k/FFM%20Talk%20Rcode%20R-finance2017.R?dl=0) and [slides](https://www.dropbox.com/s/gh4y8a6e9bcxwnv/ffmTalk%20RinFinance%202017.pdf?dl=0) used in Prof. Douglas Martin's "Fundamental Factor Models in FactorAnalytics" Pre-Conference Seminar.
+**CI**
 
-### Boston useR Group 2017
- 
-Click [here](https://www.dropbox.com/s/ibisg1y3yutej4m/cfrm%20fundamental%20facmods.pdf?dl=0) for the background slide deck for the Boston useR group talk by Prof. Doug Martin.
+Fast two-tier GitHub Actions: ~3 min single-OS check on every push/PR,
+full 4-OS matrix on main.
 
+## Quick start
 
+### Installation
+
+The bundled datasets use Git LFS. Install LFS first
+([instructions](https://docs.github.com/en/repositories/working-with-files/managing-large-files/installing-git-large-file-storage)),
+then:
+
+```r
+# install.packages("remotes")
+remotes::install_github("GreenGrassBlueOcean/FactorAnalytics")
+```
+
+Or clone and build locally:
+
+```bash
+git lfs install
+git clone https://github.com/GreenGrassBlueOcean/FactorAnalytics.git
+R CMD INSTALL FactorAnalytics
+```
+
+### Fundamental factor model
+
+```r
+library(FactorAnalytics)
+data(stocks145scores6)
+
+# Sector + style model
+fit <- fitFfm(
+  data         = stocks145scores6,
+  asset.var    = "TICKER",
+  ret.var      = "RETURN",
+  date.var     = "DATE",
+  exposure.vars = c("SECTOR", "ROE", "BP", "PM12M1M"),
+  addIntercept = TRUE
+)
+
+fit                             # print summary
+coef(fit)[1:5, 1:4]            # exposures (betas) for first 5 assets
+head(fit$factor.returns)        # factor return time series
+```
+
+### Risk decomposition
+
+```r
+# Factor model covariance matrix
+cov_mat <- fmCov(fit)
+
+# Decompose volatility, VaR, and ES by factor
+sd_dec  <- fmSdDecomp(fit)
+var_dec <- fmVaRDecomp(fit)
+es_dec  <- fmEsDecomp(fit)
+
+# Percentage of each asset's VaR attributed to each factor
+head(var_dec$pcVaR)
+```
+
+### Performance attribution
+
+```r
+pa <- paFm(fit)
+
+# Cumulative return attributed to each factor, per asset
+head(pa$cum.ret.attr.f)
+
+# Time series of attributed returns for a single asset
+pa$attr.list[["AAPL"]]
+```
+
+### Time series factor model
+
+```r
+data(managers, package = "PerformanceAnalytics")
+colnames(managers) <- make.names(colnames(managers))
+
+fit_ts <- fitTsfm(
+  asset.names  = colnames(managers[, 1:6]),
+  factor.names = colnames(managers[, 7:9]),
+  mkt.name     = "SP500.TR",
+  rf.name      = "US.3m.TR",
+  data         = managers
+)
+
+summary(fit_ts)
+fmCov(fit_ts)
+```
+
+### MSCI-type multi-country model
+
+Models with two or more categorical exposures (e.g. sector + country) trigger
+the MSCI branch, which uses restriction matrices to handle rank deficiency:
+
+```r
+# Assuming your data has SECTOR and COUNTRY character columns
+fit_msci <- fitFfm(
+  data          = my_data,
+  asset.var     = "TICKER",
+  ret.var       = "RETURN",
+  date.var      = "DATE",
+  exposure.vars = c("SECTOR", "COUNTRY", "ROE", "BP"),
+  addIntercept  = TRUE
+)
+
+fit_msci$model.MSCI   # TRUE
+fit_msci$factor.names  # Market, ROE, BP, sector levels..., country levels...
+```
+
+## Bundled datasets
+
+| Dataset | Description |
+|---------|-------------|
+| `stocks145scores6` | 145 US stocks, 6 factor scores, monthly 1990–2015 |
+| `factorDataSetDjia5Yrs` | 22 DJIA stocks, sector + style, monthly 2008–2013 |
+| `managers` | 6 funds + 3 factors + risk-free rate (from PerformanceAnalytics) |
+
+## Key functions
+
+| Category | Functions |
+|----------|-----------|
+| **Model fitting** | `fitFfm()`, `fitTsfm()`, `fitTsfmUpDn()` |
+| **Covariance** | `fmCov()` |
+| **Risk decomposition** | `fmSdDecomp()`, `fmVaRDecomp()`, `fmEsDecomp()` |
+| **Portfolio risk** | `portSdDecomp()`, `portVaRDecomp()`, `portEsDecomp()` |
+| **Attribution** | `paFm()`, `repReturn()`, `repRisk()` |
+| **Diagnostics** | `fmRsq()`, `fmTstats()`, `vif()` |
+| **S3 methods** | `plot()`, `summary()`, `predict()`, `coef()` |
+
+## Documentation
+
+- **Vignette:** `vignette("Fundamental-Factor-Models-FactorAnalytics")` — theory
+  and worked examples for fundamental factor models
+- **Architecture reference:** [architecture.md](architecture.md) — call graphs,
+  data flow, and implementation details
+- **Refactoring log:** [AGENTS.md](AGENTS.md) — complete record of all bug fixes,
+  optimizations, and phase deliverables
+
+## Upstream
+
+Forked from [braverock/FactorAnalytics](https://github.com/braverock/FactorAnalytics).
+Original authors: Eric Zivot, Doug Martin, Sangeetha Srinivasan, Avinash Acharya,
+Yi-An Chen, Mido Shammaa, Lingjie Yi, Kirk Li, and Justin M. Shea.
+
+## License
+
+GPL-2
