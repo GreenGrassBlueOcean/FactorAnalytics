@@ -131,24 +131,11 @@ expand_newdata_ffm <- function(object, newdata) {
     }
   }
 
-  # Build model.matrix for each char exposure (no intercept = one dummy per level).
-  # Subset to only char columns before model.matrix so NAs in numeric columns
-  # cannot trigger row-dropping via na.action.
-  if (length(exposures_char) == 1L) {
-    mm <- model.matrix(~ . - 1,
-                       data = newdata[, exposures_char, drop = FALSE])
-    beta_star <- cbind(Market = rep(1, nrow(newdata)), mm)
-  } else {
-    mm1 <- model.matrix(~ . - 1,
-                        data = newdata[, exposures_char[1], drop = FALSE])
-    mm2 <- model.matrix(~ . - 1,
-                        data = newdata[, exposures_char[2], drop = FALSE])
-    beta_star <- cbind(Market = rep(1, nrow(newdata)), mm1, mm2)
-  }
-
-  # Apply restriction matrix: B.mod = beta_star %*% R_mat
-  B_mod <- beta_star %*% R_mat
-  colnames(B_mod) <- paste0("V", seq_len(ncol(B_mod)))
+  # Build restricted design matrix using shared helpers.
+  # Factor columns validated above; NAs in numeric columns cannot corrupt
+  # model.matrix because build_beta_star subsets to only char columns.
+  beta_star <- build_beta_star(newdata, exposures_char)
+  B_mod <- apply_restriction(beta_star, R_mat)
 
   # Combine with numeric exposures
   result <- as.data.frame(B_mod)

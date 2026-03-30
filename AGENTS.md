@@ -21,6 +21,7 @@ architecture reference are in:
 | **Phase 4 — Testing & Bug Fixes** | ✅ Complete | Unbalanced panel bug fixed. fmCov invariants. Coverage expansion. PA integration test. xts churn profiled → deferred. 8 pre-existing bugs fixed. 458 assertions across 19 test files, 0 failures, 0 skips. Commit `7039a0a`. |
 | **Phase 5 — Input Validation** | ✅ Complete | fitFfm/specFfm dedup (8 checks consolidated). Column-existence checks in specFfm + fitTsfm. `analysis` length bug fixed. fitTsfm.control duplicate + typo fixed. 470 assertions across 19 test files, 0 failures. |
 | **Phase 6 — MSCI Branch Testing** | ✅ Complete | MSCI+style extraction bug fixed. 135 MSCI-specific assertions (LS/WLS/W-Rob × pure/style, paFm, downstream methods). `print.tsfm` example fix. `return.cov`/`resid.cov`/`model.MSCI` added to ffm object. Fast CI. 605 assertions across 20 test files, 0 failures. R CMD check clean. |
+| **Phase 7 — Shared model.matrix Helper** | ✅ Complete | Extracted `build_beta_star`, `build_restriction_matrix`, `apply_restriction` helpers. 3 code sites → 1 source of truth for categorical design matrix pipeline. Dead code removed (`formula.expochar`, `formulaL`, `beta.expochar`, `beta1`/`beta2` columns). 623 assertions across 21 test files, 0 failures. R CMD check clean. |
 
 ## Test Infrastructure
 
@@ -51,7 +52,8 @@ architecture reference are in:
   - `test-roll-fitFfmDT.R` — 2 assertions: rolling-window FFM smoke test (Phase 4.3)
   - `test-integration-pa.R` — 20 assertions: PortfolioAnalytics integration simulation (Phase 4.4)
   - `test-fitFfm-msci.R` — 135 assertions: MSCI model: LS/WLS/W-Rob × pure/style, downstream fmCov/VaR/ES, paFm decomposition identity, plot/print/summary (Phase 6)
-- **Total:** 605 assertions across 20 test files, 0 failures, 0 skips.
+  - `test-helpers-design-matrix.R` — 18 assertions: build_beta_star, build_restriction_matrix, apply_restriction unit tests + round-trip vs expand_newdata_ffm (Phase 7)
+- **Total:** 623 assertions across 21 test files, 0 failures, 0 skips.
 - **Coverage:** 46.4% baseline (commit `4b58a6e`).
 - **Tolerances:** Coefficients/factor returns `1e-10`, covariance `1e-8`, risk decomp `1e-6`.
 - **Setup:** `tests/testthat/setup.R` loads all bundled datasets and prepares the

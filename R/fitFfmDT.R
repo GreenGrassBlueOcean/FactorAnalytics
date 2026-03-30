@@ -19,6 +19,60 @@ strip_lm <- function(fit) {
   fit
 }
 
+# Build unrestricted design matrix with Market intercept.
+# Given a data.frame with categorical columns (already factors), construct
+# the model.matrix dummies and prepend a Market intercept column (all 1s).
+# Handles both single-categorical (sector) and multi-categorical (MSCI) cases.
+#
+# @param data_df data.frame (or data.table subset) containing factor columns
+# @param exposures_char character vector of categorical exposure column names
+# @return matrix with columns: Market, then one-hot dummies for each exposure
+build_beta_star <- function(data_df, exposures_char) {
+  mm_list <- lapply(exposures_char, function(v) {
+    model.matrix(~ . - 1, data = data_df[, v, drop = FALSE])
+  })
+  mm <- do.call(cbind, mm_list)
+  cbind(Market = rep(1, nrow(data_df)), mm)
+}
+
+# Build sum-to-zero restriction matrix for categorical exposures.
+# For a single categorical with K levels, produces a (K+1) x K matrix.
+# For two categoricals with K1 and K2 levels, produces a (K1+K2+1) x (K1+K2-1)
+# matrix with block-diagonal structure.
+#
+# @param K_levels integer vector of factor level counts (length 1 or 2)
+# @return restriction matrix R such that B.mod = beta_star %*% R
+build_restriction_matrix <- function(K_levels) {
+  if (length(K_levels) == 1L) {
+    K1 <- K_levels[1L]
+    rbind(diag(K1), c(0, rep(-1, K1 - 1)))
+  } else if (length(K_levels) == 2L) {
+    K1 <- K_levels[1L]
+    K2 <- K_levels[2L]
+    rbind(
+      cbind(diag(K1), matrix(0, nrow = K1, ncol = K2 - 1)),
+      c(c(0, rep(-1, K1 - 1)), rep(0, K2 - 1)),
+      cbind(matrix(0, ncol = K1, nrow = K2 - 1), diag(K2 - 1)),
+      c(rep(0, K1), rep(-1, K2 - 1))
+    )
+  } else {
+    stop("build_restriction_matrix supports at most 2 categorical exposures.",
+         call. = FALSE)
+  }
+}
+
+# Apply restriction matrix to unrestricted design matrix.
+# Computes B.mod = beta_star %*% R_matrix and names columns V1..Vk.
+#
+# @param beta_star matrix from build_beta_star() (N x (1+sum(K)))
+# @param R_matrix matrix from build_restriction_matrix()
+# @return matrix B.mod with columns named V1, V2, ..., Vk
+apply_restriction <- function(beta_star, R_matrix) {
+  B_mod <- beta_star %*% R_matrix
+  colnames(B_mod) <- paste0("V", seq_len(ncol(B_mod)))
+  B_mod
+}
+
 #' @title Specifies the elements of a fundamental factor model
 #'
 #' @description Factor models have a few parameters that describe how the
@@ -506,7 +560,7 @@ fitFfmDT <- function(ffMSpecObj,
 
   # Due to NSE notes related to data.table in R CMD check
   . = beta.star = R_matrix = toRegress = beta.mod.style = B.style = NULL
-  beta.mic = beta1 = beta2 = K1 = K2 = W = NULL
+  beta.mic = K = K1 = K2 = W = B.mod = NULL
   # See data.table "Importing data.table" vignette
 
   fit.method = toupper(fit.method[1])
@@ -546,8 +600,6 @@ fitFfmDT <- function(ffMSpecObj,
       # to remove the rank deficiency.
       fm.formula <- paste(fm.formula, "- 1")
       ffMSpecObj$dataDT[, eval(ffMSpecObj$exposures.char) :=  as.factor(get(ffMSpecObj$exposures.char))]
-      #formula to extract beta of Sec or Country
-      formula.expochar = as.formula(paste(ffMSpecObj$yVar, "~", ffMSpecObj$exposures.char, "-1"))
 
       factor.names <- c("Market", paste(levels(ffMSpecObj$dataDT[[ffMSpecObj$exposures.char]]),sep=" "),
                         ffMSpecObj$exposures.num)
@@ -568,27 +620,24 @@ fitFfmDT <- function(ffMSpecObj,
     idxNA <- sapply(betasDT$toRegress, FUN = anyNA) # this could exist due to LAGGING of exposures
 
     if (length(ffMSpecObj$exposures.char)){
-      beta.expochar <- ffMSpecObj$dataDT[, .(beta.expochar = .(model.matrix(formula.expochar, .SD))), .SDcols = sdcols, by = d_]
-      #Define beta.star as Beta of the whole model with Intercept/Market represtend by col of ones
-      beta.expochar[, beta.star := .(.(cbind("Market" = rep(1, nrow(beta.expochar[[1]])),
-                                             beta.expochar[[1]]))), by = d_]
-      #Number of factors
-      beta.expochar[, K := .(dim(beta.star[[1]])[2]), by = d_]
+      beta_star_dt <- ffMSpecObj$dataDT[, list(
+        beta.star = list(build_beta_star(as.data.frame(.SD), ffMSpecObj$exposures.char))
+      ), .SDcols = sdcols, by = d_]
+      beta_star_dt[, K := .(dim(beta.star[[1]])[2]), by = d_]
       data.table::setkeyv(betasDT, d_)
-      data.table::setkeyv(beta.expochar, d_)
+      data.table::setkeyv(beta_star_dt, d_)
 
-      betasDT <- betasDT[beta.expochar]
+      betasDT <- betasDT[beta_star_dt]
     }
 
 
 
     if (ffMSpecObj$addIntercept == TRUE && ffMSpecObj$model.styleOnly ==FALSE) {
-      # we need to create a restriction matrix
-      #Define Restriction matrix
-      betasDT[, R_matrix := .(.(rbind(diag(K-1), c(0,rep(-1,K-2))))), by = d_]
-
-      #Define B.Mod = X*R
-      betasDT[, B.mod := .(.(beta.star[[1]] %*% R_matrix[[1]])), by = d_]
+      K_levels <- vapply(ffMSpecObj$exposures.char,
+                         function(v) nlevels(ffMSpecObj$dataDT[[v]]),
+                         integer(1))
+      betasDT[, R_matrix := list(list(build_restriction_matrix(K_levels))), by = d_]
+      betasDT[, B.mod := list(list(apply_restriction(beta.star[[1]], R_matrix[[1]]))), by = d_]
 
       betasDT[, toRegress := .(.(cbind(B.mod[[1]],toRegress[[1]] ))), by = d_]
 
@@ -605,13 +654,13 @@ fitFfmDT <- function(ffMSpecObj,
 
       }
 
-      #Formula for Markt+Sec/Country Model
-      K <- length(levels(ffMSpecObj$dataDT[[ffMSpecObj$exposures.char]]))
-      B.mod = paste0("V", 1:K) # variable names
-      fmSI.formula = as.formula(paste(ffMSpecObj$yVar, "~",
-                                      paste(c(B.mod,ffMSpecObj$exposures.num),collapse = "+")
-                                      ,"-1" ))
-      fm.formula = fmSI.formula
+      # Formula for Market+Sector/Country Model
+      n_V <- sum(K_levels)
+      fmSI.formula <- as.formula(paste(ffMSpecObj$yVar, "~",
+                                       paste(c(paste0("V", seq_len(n_V)),
+                                               ffMSpecObj$exposures.num), collapse = "+"),
+                                       "-1"))
+      fm.formula <- fmSI.formula
     }
   } else {
 
@@ -619,71 +668,39 @@ fitFfmDT <- function(ffMSpecObj,
     if (length(ffMSpecObj$exposures.char)) {
       fm.formula <- paste(fm.formula, "- 1")
       ffMSpecObj$dataDT[ ,  (ffMSpecObj$exposures.char) := lapply(.SD, as.factor), .SDcols = ffMSpecObj$exposures.char]
-
-      formulaL = list()
-
-      for(i in ffMSpecObj$exposures.char)
-      {
-        formulaL[[i]] = as.formula(paste(ffMSpecObj$yVar, "~", i, "-1"))
-      }
     }
 
     # convert the pasted expression into a formula object
     fm.formula <- as.formula(fm.formula)
-    #Extract model beta, expo.char beta and expo.num betas
     sdcols <- c(data.table::key(ffMSpecObj$dataDT), ffMSpecObj$yVar, ffMSpecObj$exposure.vars )
-    #Beta  is for the whole model (generally without intercept)
-    #clean up NA's
     ffMSpecObj$dataDT <- ffMSpecObj$dataDT[complete.cases(ffMSpecObj$dataDT[, .SD, .SDcols = sdcols])]
-    betasDT <- ffMSpecObj$dataDT[, .(toRegress = .(.SD),
-                                     beta = .(model.matrix(fm.formula, .SD)),
-                                     beta1 = .(model.matrix(formulaL[[1]], .SD)),
-                                     beta2 = .(model.matrix(formulaL[[2]], .SD))),
-                                 .SDcols = sdcols, by = d_]
-    betasDT[ , beta.mic := .(.(cbind("Market" = rep(1, nrow(beta1[[1]])), beta1[[1]], beta2[[1]]))), by = d_]
-    # for now we are skipping over adding a style... lines 692/693
+    betasDT <- ffMSpecObj$dataDT[, list(
+      toRegress = list(.SD),
+      beta = list(model.matrix(fm.formula, .SD)),
+      beta.mic = list(build_beta_star(as.data.frame(.SD), ffMSpecObj$exposures.char))
+    ), .SDcols = sdcols, by = d_]
 
+    K_levels_msci <- vapply(ffMSpecObj$exposures.char,
+                            function(v) nlevels(ffMSpecObj$dataDT[[v]]),
+                            integer(1))
+    betasDT[, K1 := K_levels_msci[1L]]
+    betasDT[, K2 := K_levels_msci[2L]]
 
-    betasDT[, K1 := .(dim(beta1[[1]])[2]), by = d_]
-
-    betasDT[, K2 := .(dim(beta2[[1]])[2]), by = d_]
-
-    # we need to create a restriction matrix
-    #Define Restriction matrix
-
-    betasDT[, R_matrix := .(.(rbind( cbind(diag(K1), matrix(0, nrow = K1, ncol = K2-1)),
-                                     c(c(0,rep(-1, K1-1)), rep(0, K2-1)),
-                                     cbind(matrix(0, ncol = K1, nrow = K2-1), diag(K2-1)),
-                                     c(rep(0, K1), rep(-1, K2-1))))), by = d_]
-
-
-    #Define B.Mod = X*R
-    betasDT[, B.mod := .(.(beta.mic[[1]] %*% R_matrix[[1]])), by = d_]
+    betasDT[, R_matrix := list(list(build_restriction_matrix(K_levels_msci))), by = d_]
+    betasDT[, B.mod := list(list(apply_restriction(beta.mic[[1]], R_matrix[[1]]))), by = d_]
 
     betasDT[, toRegress := .(.(cbind(B.mod[[1]],toRegress[[1]] ))), by = d_]
 
     data.table::setkeyv(betasDT, d_)
-    # if(length(ffMSpecObj$exposures.num) > 0){
-    #   sdcols <- ffMSpecObj$exposures.num
-    #   #Define Beta for Style factors
-    #   tempDT <- ffMSpecObj$dataDT[, .(B.style = .(as.matrix(x = .SD))),
-    #                               .SDcols = sdcols, by = d_]
-    #   data.table::setkeyv(tempDT, ffMSpecObj$date.var)
-    #
-    #   betasDT <- betasDT[tempDT]
-    #   betasDT[, beta.mod.style := .(.(cbind(B.mod[[1]],B.style[[1]]))), by = d_]
-    #
-    # }
-    idxNA <- sapply(betasDT$toRegress, FUN = anyNA) # this could exist due to LAGGING of exposures
+    idxNA <- sapply(betasDT$toRegress, FUN = anyNA)
 
-    #Formula for Markt+Sec/Country Model
-    # we need to get a count of all factors levels + the intercept
-    K = (betasDT[1,]$K1[[1]]) + (betasDT[1,]$K2[[1]])+1 - 2 # this is a hack for now, we subtract 2 to account for the reference level
-    B.mod = paste0("V", 1:K) # variable names
-    fmMSCI.formula = as.formula(paste(ffMSpecObj$yVar, "~", paste(c(B.mod,ffMSpecObj$exposures.num),collapse = "+"),"-1" ))
-
-
-    fm.formula = fmMSCI.formula
+    # Formula for MSCI Model
+    n_V_msci <- sum(K_levels_msci) - 1L
+    fmMSCI.formula <- as.formula(paste(ffMSpecObj$yVar, "~",
+                                       paste(c(paste0("V", seq_len(n_V_msci)),
+                                               ffMSpecObj$exposures.num), collapse = "+"),
+                                       "-1"))
+    fm.formula <- fmMSCI.formula
 
 
 
