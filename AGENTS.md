@@ -35,7 +35,10 @@ architecture reference are in:
   **unmodified** v2.4.2 upstream code by `tests/testthat/helpers/generate_fixtures.R`;
   4 added in Phase 2 for vectorized EWMA/GARCH intermediate results;
   6 portDecomp fixtures regenerated after the portfolio residual normalization
-  bug fix (commit `7fc0fe3`) with corrected slot names.
+  bug fix (commit `7fc0fe3`) with corrected slot names;
+  `fixture_ffm_ls_sector.rds` regenerated in Phase 9.7 after column ordering fix
+  (values identical, column order changed from `(Market, cat, style)` to
+  `(Market, style, cat)` to match `factor.names`).
   Each fixture stores only numeric components (no full `lm`/`ffm` objects).
 - **Test files:** 24 files in `tests/testthat/`:
   - `test-fitFfm.R` — 5 FFM model branches + structure/dimension invariants

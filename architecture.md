@@ -2,7 +2,7 @@
 
 > Reference document for the GreenGrassBlueOcean refactoring effort.
 > Generated from `braverock/FactorAnalytics` v2.4.2 (2024-12-12).
-> Updated 2026-03-30 with Phases 0–9.6 findings.
+> Updated 2026-03-30 with Phases 0–9.7 findings.
 
 ---
 
@@ -128,8 +128,9 @@ ffmSpec
 
 ### 2.4 Model Types (Branching Logic)
 
-`fitFfmDT()` and `extractRegressionStats()` have **three major code paths** controlled
-by the spec object flags. This is the most complex branching in the package:
+`fitFfmDT()` has **three major code paths** controlled by the spec object flags;
+`extractRegressionStats()` has two (branches 2 and 3 were unified in Phase 9.7).
+This is the most complex branching in the package:
 
 | Model type | Condition | Intercept | Restriction matrix |
 |---|---|---|---|
@@ -563,6 +564,27 @@ merging.
    **Fix:** Added `ffmObj$return.cov`, `ffmObj$resid.cov`, `ffmObj$model.MSCI` to
    `convert.ffmSpec()`.
 
+### 4.11 Bugs Fixed During Phase 9.7 (Branch 2/3 Unification)
+
+1. **`extractRegressionStats()` Branch 2 column ordering inconsistency**:
+   Branch 2 (sector + intercept) built `fr_col_names` as `c("Market", cat_levels, style)`
+   while `factor.names` (from `build_factor_names()`) was `c("Market", style, cat_levels)`.
+   This mismatch required the post-hoc column reordering code at lines 1128-1137 to
+   realign `beta` with `factor.returns`. Branch 3 (MSCI) had no mismatch.
+   **Fix:** Unified branches 2 and 3 using `factor.names` for column ordering. The
+   cleanup code is now a no-op for intercept models.
+
+2. **`normalize_fm_residuals()` POSIXct→Date timezone shift** (R/helpers-risk.R):
+   `as.Date(zoo::index(z_xts))` without a timezone argument converted POSIXct to Date
+   using UTC. On non-UTC systems, dates shifted back by one day (e.g., `2006-12-31
+   00:00:00 CET` → `2006-12-30`). This caused `merge()` in `portVaRDecomp.tsfm` and
+   `fmVaRDecomp.tsfm` to produce completely non-overlapping date indices (132 + 120 =
+   252 rows instead of ~132), triggering "longer object length is not a multiple of
+   shorter object length" warnings and producing incorrect kernel-weighted marginal
+   VaR/ES estimates.
+   **Fix:** Detect `POSIXct` index and use the stored timezone attribute (falling back
+   to `Sys.timezone()` when the attribute is empty) for the `as.Date()` conversion.
+
 ---
 
 ## 5. S3 Class Hierarchy and Method Dispatch
@@ -881,10 +903,10 @@ scale (percentages), not 0–1 (proportions).
 | `test-integration-pa.R` | 4 | PA integration: moment components, subsetting, custom moment fn | Behavioural (Phase 4) |
 | `test-fitFfm-msci.R` | 12 | MSCI: LS/WLS/W-Rob × pure/style, fmCov, VaR, paFm, plot/print | Structural + behavioural (Phase 6) |
 | `test-helpers-design-matrix.R` | 5 | `build_beta_star`, `build_restriction_matrix`, `apply_restriction` unit tests + round-trip | Behavioural (Phase 7) |
-| `test-helpers-extract-stats.R` | 7 | `build_factor_names` (6 configs), `map_coefficients_to_factor_returns` (sector/MSCI/pure) | Behavioural (Phase 8) |
+| `test-helpers-extract-stats.R` | 14 | `build_factor_names`, `map_coefficients_to_factor_returns`, `extract_restricted_returns`, `build_last_period_beta`, column ordering invariant | Behavioural (Phase 8 + 9.7) |
 | `test-helpers-risk.R` | 9 | `make_beta_star`, `make_factor_star_cov`, `normalize_fm_residuals`, `make_resid_diag` | Behavioural (Phase 9) |
 | `test-riskDecomp-dispatch.R` | 20 | riskDecomp dispatch equivalence (Sd/VaR/ES × asset/port × tsfm/ffm), invert convention, repRisk smoke | Behavioural (Phase 9.6) |
-| **Total** | **180** | | **757 assertions** |
+| **Total** | **187** | | **782 assertions** |
 
 **Conditional skips (added Phase 1):** Three test blocks skip when optional packages
 are absent:
@@ -979,6 +1001,7 @@ These are properties that **must** hold after every phase:
 | **8 — extractRegressionStats Cleanup** | ✅ Complete | `build_factor_names`, `map_coefficients_to_factor_returns` helpers; `.()` → `list()` cleanup; dead NSE vars removed | 645 assertions; 22 test files. Commit `492a187`. |
 | **9 — S3 Method Consolidation** | ✅ Complete | 4 shared risk helpers in `helpers-risk.R`; integrated into 8 files / 15+ methods; `fmSdDecomp.ffm` NA-zeroing fix | 690 assertions; 23 test files. Commit `526d2c3`. |
 | **9.6 — riskDecomp Dispatcher** | ✅ Complete | `riskDecomp.R` 762→~200 lines: thin dispatcher; portfolio residual normalization bug eliminated from `repRisk` path; orphaned imports relocated | 757 assertions; 24 test files. Commit `8c2a429`. |
+| **9.7 — Branch 2/3 Unification** | ✅ Complete | `extract_restricted_returns` + `build_last_period_beta` helpers; ~90→~10 lines in caller; Branch 2 column ordering fixed; `normalize_fm_residuals` POSIXct→Date timezone bug fixed | 782 assertions; 24 test files; 0 warnings. Commit `b5770a1`. |
 
 ---
 
