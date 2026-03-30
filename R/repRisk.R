@@ -638,6 +638,10 @@ repRisk.ffm <- function(object, weights = NULL, risk = c("Sd", "VaR", "ES"),
         result = result[risk,]
       }
 
+      # Always create output (Bug fix: output was only defined when isPrint=TRUE,
+      # causing 'object not found' in multi-portfolio paths with isPrint=FALSE)
+      output = list(decomp = result)
+
       if(isPrint){
         if(is.null(digits)){
           if(decomp == 'FPCR'){
@@ -660,11 +664,14 @@ repRisk.ffm <- function(object, weights = NULL, risk = c("Sd", "VaR", "ES"),
       if(isPlot & !mul.port){
 
         # single portfolio with multiple risks
-        if(is(result) == "matrix")
+        if(is.matrix(result))
         {
           result = output[[1]]
-          result.mat = result[,-1]
-          # newdata = melt((as.data.table(result.mat)), id.vars = as.factor(rownames(result.mat)))
+          result.mat = result[,-1, drop = FALSE]
+          # Bug fix: newdata was never created (melt was commented out).
+          # Use as.data.frame(as.table()) for reliable Var1/Var2 columns.
+          newdata = as.data.frame(as.table(result.mat))
+          colnames(newdata) = c("Var1", "Var2", "value")
           if(sliceby == "riskType"){
             print(barchart(value~Var2|Var1, data = newdata,stack = TRUE, origin =0, main = list(paste("Portfolio", decomp, "Comparison" ), cex = axis.cex),layout = layout,
                            scales=list(y=list(cex=axis.cex), x=list(cex=axis.cex,rot=90)),par.strip.text=list(col="black",font=2, cex = stripText.cex),ylab = '', xlab = '', as.table = TRUE))
@@ -697,46 +704,53 @@ repRisk.ffm <- function(object, weights = NULL, risk = c("Sd", "VaR", "ES"),
     if(isPlot && portfolio.only)
       {
         if(length(risk)>1){
-#         output1 = lapply(X = 1:length(output.list),function(X) output.list[[X]][[1]][i,])
-#         result.mat=  matrix(unlist(output1), ncol = length(output1))
-#         colnames(result.mat) = unlist(lapply(X=1:length(object), function(X) paste("Portfolio",X)))
-#         rownames(result.mat) = names(output1[[1]])
+          # Bug 1 fix: original used rep(risk, ) [missing arg] and broken melt()
+          # Extract per-portfolio decomposition matrices and tag with risk type
           result = unlist(output.list, recursive = FALSE, use.names = FALSE)
           result.mat = matrix(unlist(result), ncol = length(result))
-          rownames(result.mat) = rep(unlist(dimnames(result[[1]])[2]), 1, each = length(risk))
           colnames(result.mat) = unlist(lapply(X=1:length(object), function(X) paste("P",X)))
-          risk.type = rep(risk, 0.5*nrow(result.mat))
-          #result.mat = cbind(result.mat, Risk = factor(risk.type))
-          result.mat = result.mat[-c(1:length(risk)),]
-          newdata = data.table::melt(data.table::as.data.table(t(result.mat)),
-                                     id.vars = as.factor(colnames(result.mat)))
+          # Build factor names from first result's column names
+          factor_nms <- colnames(result[[1]])
+          if (is.null(factor_nms)) factor_nms <- paste0("F", seq_len(nrow(result.mat) / length(risk)))
+          rownames(result.mat) = rep(factor_nms, times = length(risk))
+          # Remove first length(risk) rows (portfolio-level totals)
+          result.mat = result.mat[-c(1:length(risk)),, drop = FALSE]
+          # Reshape using as.data.frame(as.table()) for reliable Var1/Var2 columns
+          newdata = as.data.frame(as.table(result.mat))
+          colnames(newdata) = c("factor", "portfolio", "value")
+          # Risk labels: rows are blocked by risk type (all Sd factors, then all VaR, etc.)
+          n_factors_per_risk <- nrow(result.mat) / length(risk)
+          newdata$risk = factor(rep(rep(risk, each = as.integer(n_factors_per_risk)),
+                                    times = ncol(result.mat)))
 
-          newdata$risk = factor(rep(risk, ))
-
-          print(barchart(value~Var1|Var2*risk, data = newdata, stack = TRUE,
-                         origin = 0,
+          print(barchart(value ~ factor | portfolio * risk, data = newdata,
+                         stack = TRUE, origin = 0,
                          main = list(paste("Portfolio Risk Comparison- ", decomp),
                                      cex = axis.cex),
                          layout = layout,
-                         scales=list(y=list(cex=axis.cex),
-                                     x=list(cex=axis.cex)),
+                         scales=list(y=list(cex=axis.cex), x=list(cex=axis.cex)),
                          par.strip.text=list(col="black", font=2, cex = stripText.cex),
                          ylab = '', xlab = '', as.table = TRUE))
         }
         else{
-          result.mat=  matrix(unlist(output.list), ncol = length(output.list))
+          # Bug 2 fix: original melt() had wrong id.vars producing missing Var2
+          result.mat = matrix(unlist(output.list), ncol = length(output.list))
           colnames(result.mat) = unlist(lapply(X=1:length(object), function(X) paste("Portfolio",X)))
           rownames(result.mat) = names(output.list[[1]][[1]])
-        #Remove Total
-        result.mat = result.mat[-1,]
+          # Remove Total row
+          result.mat = result.mat[-1,, drop = FALSE]
+          # Reshape using as.data.frame(as.table()) for reliable columns
+          newdata = as.data.frame(as.table(result.mat))
+          colnames(newdata) = c("factor", "portfolio", "value")
 
-        newdata = data.table::melt(data.table::as.data.table(t(result.mat)),
-                                   id.vars = as.factor(colnames(result.mat)))
-
-        print(barchart(value~Var1|Var2, data = newdata,stack = TRUE, origin =0, main = list(paste("Portfolio Risk Comparison- ",risk,decomp), cex = axis.cex),layout = layout,
-                       scales=list(y=list(cex=axis.cex), x=list(cex=axis.cex)),par.strip.text=list(col="black",font=2, cex = stripText.cex),ylab = '', xlab = '', as.table = TRUE))
-#         barchart(value~Var1|Var2, data = newdata, stack = TRUE, origin =0, scales = list(y = list(cex = axis.cex)),par.settings = my.settings,
-#                  par.strip.text=list(col="black", cex = stripText.cex), group = Var1,auto.key=list(space="right",points=FALSE, rectangles=TRUE,title="", cex.title=stripText.cex))
+          print(barchart(value ~ factor | portfolio, data = newdata,
+                         stack = TRUE, origin = 0,
+                         main = list(paste("Portfolio Risk Comparison- ", risk, decomp),
+                                     cex = axis.cex),
+                         layout = layout,
+                         scales=list(y=list(cex=axis.cex), x=list(cex=axis.cex)),
+                         par.strip.text=list(col="black",font=2, cex = stripText.cex),
+                         ylab = '', xlab = '', as.table = TRUE))
        }}
   }
   else
