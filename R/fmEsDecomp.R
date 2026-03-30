@@ -26,7 +26,7 @@
 #' @importFrom zoo time<-
 #' @importFrom stats time
 #' 
-#' @param object fit object of class \code{tsfm}, \code{sfm} or \code{ffm}.
+#' @param object fit object of class \code{tsfm} or \code{ffm}.
 #' @param factor.cov optional user specified factor covariance matrix with 
 #' named columns; defaults to the sample covariance matrix.
 #' @param p tail probability for calculation. Default is 0.05.
@@ -85,8 +85,8 @@
 
 fmEsDecomp <- function(object, ...){
   # check input object validity
-  if (!inherits(object, c("tsfm", "sfm", "ffm"))) {
-    stop("Invalid argument: Object should be of class 'tsfm', 'sfm' or 'ffm'.")
+  if (!inherits(object, c("tsfm", "ffm"))) {
+    stop("Invalid argument: Object should be of class 'tsfm' or 'ffm'.")
   }
   UseMethod("fmEsDecomp")
 }
@@ -185,99 +185,6 @@ fmEsDecomp.tsfm <- function(object, factor.cov, p=0.05, type=c("np","normal"),
 }
 
 #' @rdname fmEsDecomp
-#' @method fmEsDecomp sfm
-#' @export
-
-fmEsDecomp.sfm <- function(object, factor.cov, p=0.05, type=c("np","normal"),  
-                           use="pairwise.complete.obs", ...) {
-  # set default for type
-  type = type[1]
-  
-  if (!(type %in% c("np","normal"))) {
-    stop("Invalid args: type must be 'np' or 'normal' ")
-  }
-  
-  beta.star <- make_beta_star(object$loadings, object$resid.sd)
-  
-  # factor returns and residuals data
-  factors.xts <- object$factors
-  resid.xts <- normalize_fm_residuals(residuals(object), object$resid.sd)
-  
-  if (type=="normal") {
-    # get cov(F): K x K
-    if (missing(factor.cov)) {
-      factor.cov = cov(as.matrix(factors.xts), use=use, ...) 
-    } else {
-      if (!identical(dim(factor.cov), as.integer(c(object$k, object$k)))) {
-        stop("Dimensions of user specified factor covariance matrix are not 
-             compatible with the number of factors in the fitSfm object")
-      }
-    }
-    factor.star.cov <- make_factor_star_cov(factor.cov)
-    # factor expected returns
-    MU <- c(colMeans(factors.xts, na.rm=TRUE), 0)
-    # SIGMA*Beta to compute normal mVaR
-    SIGB <- beta.star %*% factor.star.cov
-  }
-  
-  # initialize lists and matrices
-  N <- length(object$asset.names)
-  K <- object$k
-  VaR.fm <- rep(NA, N)
-  ES.fm <- rep(NA, N)
-  idx.exceed <- list()
-  names(VaR.fm) = names(ES.fm) = object$asset.names
-  mES <- matrix(NA, N, K+1)
-  cES <- matrix(NA, N, K+1)
-  pcES <- matrix(NA, N, K+1)
-  rownames(mES)=rownames(cES)=rownames(pcES)=object$asset.names
-  colnames(mES)=colnames(cES)=colnames(pcES)=c(paste("F",1:K,sep="."),"Residuals")
-  
-  for (i in object$asset.names) {
-    # return data for asset i
-    R.xts <- object$data[,i]
-    
-    if (type=="np") {
-      # get VaR for asset i
-      VaR.fm[i] <- quantile(R.xts, probs=p, na.rm=TRUE, ...)
-      # index of VaR exceedances
-      idx.exceed[[i]] <- which(R.xts <= VaR.fm[i])
-      # compute ES as expected value of asset return, such that the given asset 
-      # return is less than or equal to its value-at-risk (VaR)
-      ES.fm[i] <- mean(R.xts[idx.exceed[[i]]], na.rm =TRUE)
-      # get F.star data object
-      time(factors.xts) <- time(resid.xts[,i])
-      factor.star <- merge(factors.xts, resid.xts[,i])
-      colnames(factor.star)[dim(factor.star)[2]] <- "Residuals"
-      # compute marginal ES as expected value of factor returns, when the asset's 
-      # return is less than or equal to its value-at-risk (VaR)
-      mES[i,] <- colMeans(factor.star[idx.exceed[[i]],], na.rm =TRUE)
-      
-    } else if (type=="normal") {
-      # extract vector of factor model loadings for asset i
-      beta.i <- beta.star[i,,drop=F]
-      # compute ES
-      ES.fm[i] <- -(beta.star[i,] %*% MU + sqrt(beta.i %*% factor.star.cov %*% t(beta.i))*dnorm(qnorm(p))/(p)) 
-      # compute marginal ES
-      mES[i,] <- -(t(MU) + SIGB[i,]/sd(R.xts, na.rm=TRUE) * dnorm(qnorm(p))/(p))
-    }
-    
-    # correction factor to ensure that sum(cES) = asset ES
-    cf <- as.numeric( ES.fm[i] / sum(mES[i,]*beta.star[i,], na.rm=TRUE) )
-    
-    # compute marginal, component and percentage contributions to ES
-    # each of these have dimensions: N x (K+1)
-    mES[i,] <- cf * mES[i,]
-    cES[i,] <- mES[i,] * beta.star[i,]
-    pcES[i,] <- 100* cES[i,] / ES.fm[i]
-  }
-  
-  fm.ES.decomp <- list(ES.fm=ES.fm, mES=mES, cES=cES, pcES=pcES)
-  
-  return(fm.ES.decomp)
-}
-
-#' @rdname fmEsDecomp
 #' @method fmEsDecomp ffm
 #' @export
 
@@ -302,7 +209,7 @@ fmEsDecomp.ffm <- function(object, factor.cov, p=0.05, type=c("np","normal"),
     } else {
       if (!identical(dim(factor.cov), dim(object$factor.cov))) {
         stop("Dimensions of user specified factor covariance matrix are not 
-             compatible with the number of factors in the fitSfm object")
+             compatible with the number of factors in the fitFfm object")
       }
     }
     factor.star.cov <- make_factor_star_cov(factor.cov)

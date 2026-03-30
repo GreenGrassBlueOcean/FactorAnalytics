@@ -7,7 +7,7 @@
 paFm(fit, ...)
 }
 \arguments{
-\item{fit}{an object of class \code{tsfm}, \code{sfm} or \code{ffm}.}
+\item{fit}{an object of class \code{tsfm} or \code{ffm}.}
 
 \item{...}{other arguments/controls passed to the fit methods.}
 }

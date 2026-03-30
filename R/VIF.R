@@ -43,8 +43,8 @@
 vif <- function(ffmObj, digits=2, isPrint=T, isPlot =T, lwd =2,stripText.cex =1,axis.cex=1, title = TRUE, ...)
 { 
   # check input object validity
-  if (!inherits(ffmObj, c("tsfm", "sfm", "ffm"))) 
-    stop("Invalid argument: Object should be of class 'tsfm', 'sfm' or 'ffm'.")
+  if (!inherits(ffmObj, c("tsfm", "ffm"))) 
+    stop("Invalid argument: Object should be of class 'tsfm' or 'ffm'.")
     
   n.assets <- length(ffmObj$asset.names)
   exposure.vars= ffmObj$exposure.vars

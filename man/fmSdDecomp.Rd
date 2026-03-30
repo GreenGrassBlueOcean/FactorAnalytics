@@ -3,15 +3,12 @@
 \name{fmSdDecomp}
 \alias{fmSdDecomp}
 \alias{fmSdDecomp.tsfm}
-\alias{fmSdDecomp.sfm}
 \alias{fmSdDecomp.ffm}
 \title{Decompose standard deviation into individual factor contributions}
 \usage{
 fmSdDecomp(object, ...)
 
 \method{fmSdDecomp}{tsfm}(object, factor.cov, use = "pairwise.complete.obs", ...)
-
-\method{fmSdDecomp}{sfm}(object, factor.cov, use = "pairwise.complete.obs", ...)
 
 \method{fmSdDecomp}{ffm}(object, factor.cov, ...)
 }

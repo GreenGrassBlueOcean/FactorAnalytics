@@ -3,22 +3,12 @@
 \name{fmEsDecomp}
 \alias{fmEsDecomp}
 \alias{fmEsDecomp.tsfm}
-\alias{fmEsDecomp.sfm}
 \alias{fmEsDecomp.ffm}
 \title{Decompose ES into individual factor contributions}
 \usage{
 fmEsDecomp(object, ...)
 
 \method{fmEsDecomp}{tsfm}(
-  object,
-  factor.cov,
-  p = 0.05,
-  type = c("np", "normal"),
-  use = "pairwise.complete.obs",
-  ...
-)
-
-\method{fmEsDecomp}{sfm}(
   object,
   factor.cov,
   p = 0.05,
@@ -37,7 +27,7 @@ fmEsDecomp(object, ...)
 )
 }
 \arguments{
-\item{object}{fit object of class \code{tsfm}, \code{sfm} or \code{ffm}.}
+\item{object}{fit object of class \code{tsfm} or \code{ffm}.}
 
 \item{...}{other optional arguments passed to \code{\link[stats]{quantile}}.}
 

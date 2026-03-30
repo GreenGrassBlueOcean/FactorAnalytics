@@ -3,7 +3,6 @@
 \name{fmCov}
 \alias{fmCov}
 \alias{fmCov.tsfm}
-\alias{fmCov.sfm}
 \alias{fmCov.ffm}
 \title{Covariance Matrix for assets' returns from fitted factor model.}
 \usage{
@@ -11,12 +10,10 @@ fmCov(object, ...)
 
 \method{fmCov}{tsfm}(object, factor.cov, use = "pairwise.complete.obs", ...)
 
-\method{fmCov}{sfm}(object, use = "pairwise.complete.obs", ...)
-
 \method{fmCov}{ffm}(object, use = "pairwise.complete.obs", ...)
 }
 \arguments{
-\item{object}{fit object of class \code{tsfm}, \code{sfm} or \code{ffm}.}
+\item{object}{fit object of class \code{tsfm} or \code{ffm}.}
 
 \item{...}{optional arguments passed to \code{\link[stats]{cov}}.}
 
@@ -34,7 +31,7 @@ on the fitted factor model.
 \description{
 Computes the covariance matrix for assets' returns based on a
 fitted factor model. This is a generic function with methods for classes
-\code{tsfm}, \code{sfm} and \code{ffm}.
+\code{tsfm} and \code{ffm}.
 }
 \details{
 \code{R(i, t)}, the return on asset \code{i} at time \code{t},

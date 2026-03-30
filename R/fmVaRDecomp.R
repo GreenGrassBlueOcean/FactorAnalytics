@@ -25,7 +25,7 @@
 #' @importFrom zoo time<-
 #' @importFrom stats time
 #' 
-#' @param object fit object of class \code{tsfm}, \code{sfm} or \code{ffm}.
+#' @param object fit object of class \code{tsfm} or \code{ffm}.
 #' @param factor.cov optional user specified factor covariance matrix with 
 #' named columns; defaults to the sample covariance matrix.
 #' @param p tail probability for calculation. Default is 0.05.
@@ -88,8 +88,8 @@
 
 fmVaRDecomp <- function(object, ...){
   # check input object validity
-  if (!inherits(object, c("tsfm", "sfm", "ffm"))) {
-    stop("Invalid argument: Object should be of class 'tsfm', 'sfm' or 'ffm'.")
+  if (!inherits(object, c("tsfm", "ffm"))) {
+    stop("Invalid argument: Object should be of class 'tsfm' or 'ffm'.")
   }
   UseMethod("fmVaRDecomp")
 }
@@ -197,108 +197,6 @@ fmVaRDecomp.tsfm <- function(object, factor.cov, p=0.05, type=c("np","normal"),
 }
 
 #' @rdname fmVaRDecomp
-#' @method fmVaRDecomp sfm
-#' @export
-
-fmVaRDecomp.sfm <- function(object, factor.cov, p=0.05, type=c("np","normal"), 
-                            use="pairwise.complete.obs", ...) {
-  # set default for type
-  type = type[1]
-  if (!(type %in% c("np","normal"))) {
-    stop("Invalid args: type must be 'np' or 'normal' ")
-  }
-  
-  beta.star <- make_beta_star(object$loadings, object$resid.sd)
-  
-  # factor returns and residuals data
-  factors.xts <- object$factors
-  resid.xts <- normalize_fm_residuals(residuals(object), object$resid.sd)
-  
-  if (type=="normal") {
-    # get cov(F): K x K
-    if (missing(factor.cov)) {
-      factor.cov = cov(as.matrix(factors.xts), use=use, ...) 
-    } else {
-      if (!identical(dim(factor.cov), as.integer(c(object$k, object$k)))) {
-        stop("Dimensions of user specified factor covariance matrix are not 
-             compatible with the number of factors in the fitSfm object")
-      }
-    }
-    factor.star.cov <- make_factor_star_cov(factor.cov)
-    # factor expected returns
-    MU <- c(colMeans(factors.xts, na.rm=TRUE), 0)
-    # SIGMA*Beta to compute normal mVaR
-    SIGB <- beta.star %*% factor.star.cov
-  }
-  
-  # initialize lists and matrices
-  N <- length(object$asset.names)
-  K <- object$k
-  VaR.fm <- rep(NA, N)
-  idx.exceed <- list()
-  n.exceed <- rep(NA, N)
-  names(VaR.fm) = names(n.exceed) = object$asset.names
-  mVaR <- matrix(NA, N, K+1)
-  cVaR <- matrix(NA, N, K+1)
-  pcVaR <- matrix(NA, N, K+1)
-  rownames(mVaR)=rownames(cVaR)=rownames(pcVaR)=object$asset.names
-  colnames(mVaR)=colnames(cVaR)=colnames(pcVaR)=c(paste("F",1:K,sep="."),"Residuals")
-  
-  for (i in object$asset.names) {
-    # return data for asset i
-    R.xts <- object$data[,i]
-    
-    if (type=="np") {
-      # get VaR for asset i
-      VaR.fm[i] <- quantile(R.xts, probs=p, na.rm=TRUE, ...)
-      
-      # get F.star data object
-      time(factors.xts) <- time(resid.xts[,i])
-      factor.star <- merge(factors.xts, resid.xts[,i])
-      colnames(factor.star)[dim(factor.star)[2]] <- "Residuals"
-      
-      # epsilon is apprx. using Silverman's rule of thumb (bandwidth selection)
-      # the constant 2.575 corresponds to a triangular kernel 
-      eps <- 2.575*sd(R.xts, na.rm =TRUE) * (nrow(R.xts)^(-1/5))
-      
-      # compute marginal VaR as expected value of factor returns, such that the
-      # asset return was incident in the triangular kernel region peaked at the 
-      # VaR value and bandwidth = epsilon.
-      k.weight <- as.vector(1 - abs(R.xts - VaR.fm[i]) / eps)
-      k.weight[k.weight<0] <- 0
-      mVaR[i,] <- colMeans(factor.star*k.weight, na.rm =TRUE)
-      
-    } else if (type=="normal")  {
-      # get VaR for asset i
-      VaR.fm[i] <- beta.star[i,] %*% MU + 
-        sqrt(beta.star[i,,drop=F] %*% factor.star.cov %*% t(beta.star[i,,drop=F]))*qnorm(p)
-      
-      # compute marginal VaR
-      mVaR[i,] <- t(MU) + SIGB[i,] * qnorm(p)/sd(R.xts, na.rm=TRUE)
-    }
-    
-    # index of VaR exceedances
-    idx.exceed[[i]] <- which(R.xts <= VaR.fm[i])
-    # number of VaR exceedances
-    n.exceed[i] <- length(idx.exceed[[i]])
-    
-    # correction factor to ensure that sum(cVaR) = asset VaR
-    cf <- as.numeric( VaR.fm[i] / sum(mVaR[i,]*beta.star[i,], na.rm=TRUE) )
-    
-    # compute marginal, component and percentage contributions to VaR
-    # each of these have dimensions: N x (K+1)
-    mVaR[i,] <- cf * mVaR[i,]
-    cVaR[i,] <- mVaR[i,] * beta.star[i,]
-    pcVaR[i,] <- 100* cVaR[i,] / VaR.fm[i]
-  }
-  
-  fm.VaR.decomp <- list(VaR.fm=VaR.fm, n.exceed=n.exceed, idx.exceed=idx.exceed, 
-                        mVaR=mVaR, cVaR=cVaR, pcVaR=pcVaR)
-  
-  return(fm.VaR.decomp)
-}
-
-#' @rdname fmVaRDecomp
 #' @method fmVaRDecomp ffm
 #' @export
 
@@ -323,7 +221,7 @@ fmVaRDecomp.ffm <- function(object, factor.cov, p=0.05, type=c("np","normal"),
     } else {
       if (!identical(dim(factor.cov), dim(object$factor.cov))) {
         stop("Dimensions of user specified factor covariance matrix are not 
-             compatible with the number of factors in the fitSfm object")
+             compatible with the number of factors in the fitFfm object")
       }
     }
     factor.star.cov <- make_factor_star_cov(factor.cov)

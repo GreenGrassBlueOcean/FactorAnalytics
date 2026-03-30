@@ -15,7 +15,7 @@
 #' @importFrom zoo index
 #' @importFrom methods is
 #'
-#' @param fit an object of class \code{tsfm}, \code{sfm} or \code{ffm}.
+#' @param fit an object of class \code{tsfm} or \code{ffm}.
 #' @param ... other arguments/controls passed to the fit methods.
 #'
 #' @return The returned object is of class \code{"pafm"} containing
@@ -52,8 +52,8 @@
 paFm <- function(fit, ...) {
 
   # check input object validity
-  if (!inherits(fit, c("tsfm", "sfm", "ffm"))) {
-    stop("Invalid argument: fit should be of class 'tsfm', 'sfm' or 'ffm'.")
+  if (!inherits(fit, c("tsfm", "ffm"))) {
+    stop("Invalid argument: fit should be of class 'tsfm' or 'ffm'.")
   }
 
   # TSFM chunk
@@ -163,75 +163,6 @@ paFm <- function(fit, ...) {
       attr.list[[k]] <- xts::xts(attr, as.Date(date))
       cum.attr.ret[k, ] <- apply(attr.factor, 2, PerformanceAnalytics::Return.cumulative)
       cum.spec.ret[k] <- PerformanceAnalytics::Return.cumulative(specific.returns)
-    }
-  }
-
-  if (is(fit)=="sfm") {
-
-    # return attributed to factors
-    cum.attr.ret <- fit$loadings
-    cum.spec.ret <- fit$r2
-    factorNames <- colnames(fit$loadings)
-    fundNames <- rownames(fit$loadings)
-    data <- PerformanceAnalytics::checkData(fit$data)
-    # create list for attribution
-    attr.list <- list()
-    # pca method
-
-    if ( dim(fit$data)[1] > dim(fit$data)[2] ) {
-
-      for (k in fundNames) {
-        fit.lm <- fit$asset.fit[[k]]
-        ## extract information from lm object
-        date <- zoo::index(data[,k])
-        # probably needs more general Date setting
-        actual.xts <- xts::xts(fit.lm$model[1], as.Date(date))
-        # attributed returns
-        # active portfolio management p.512 17A.9
-        cum.ret <-   PerformanceAnalytics::Return.cumulative(actual.xts)
-        # setup initial value
-        attr.ret.xts.all <- xts::xts(, as.Date(date))
-
-        for (i in factorNames) {
-          attr.ret.xts <- actual.xts -
-            xts::xts(as.matrix(fit.lm$model[i])%*%as.matrix(fit.lm$coef[i]),
-                as.Date(date))
-          cum.attr.ret[k,i] <- cum.ret -
-            PerformanceAnalytics::Return.cumulative(actual.xts - attr.ret.xts)
-          attr.ret.xts.all <- merge(attr.ret.xts.all, attr.ret.xts)
-        }
-
-        # specific returns
-        spec.ret.xts <- actual.xts -
-          xts::xts(as.matrix(fit.lm$model[, -1])%*%as.matrix(fit.lm$coef[-1]),
-              as.Date(date))
-        cum.spec.ret[k] <- cum.ret - PerformanceAnalytics::Return.cumulative(actual.xts- spec.ret.xts)
-        attr.list[[k]] <- merge(attr.ret.xts.all, spec.ret.xts)
-        colnames(attr.list[[k]]) <- c(factorNames, "specific.returns")
-      }
-    } else {
-      # apca method:
-      #   fit$loadings # N X K
-      #   fit$factors  # T X K
-      date <- zoo::index(fit$factors)
-
-      for (k in fundNames) {
-        attr.ret.xts.all <- xts::xts(, as.Date(date))
-        actual.xts <- xts::xts(fit$data[,k], as.Date(date))
-        cum.ret <- PerformanceAnalytics::Return.cumulative(actual.xts)
-
-        for (i in factorNames) {
-          attr.ret.xts <- xts::xts(fit$factors[,i]*fit$loadings[k,i], as.Date(date))
-          attr.ret.xts.all <- merge(attr.ret.xts.all, attr.ret.xts)
-          cum.attr.ret[k,i] <- cum.ret - PerformanceAnalytics::Return.cumulative(actual.xts -
-                                                             attr.ret.xts)
-        }
-        spec.ret.xts <- actual.xts - xts::xts(fit$factors%*%t(fit$loadings[k,]),
-                                         as.Date(date))
-        cum.spec.ret[k] <- cum.ret - PerformanceAnalytics::Return.cumulative(actual.xts- spec.ret.xts)
-        attr.list[[k]] <- merge(attr.ret.xts.all, spec.ret.xts)
-        colnames(attr.list[[k]]) <- c(factorNames, "specific.returns")
-      }
     }
   }
 

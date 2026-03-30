@@ -2,7 +2,7 @@
 #'
 #' @description Computes the covariance matrix for assets' returns based on a
 #' fitted factor model. This is a generic function with methods for classes
-#' \code{tsfm}, \code{sfm} and \code{ffm}.
+#' \code{tsfm} and \code{ffm}.
 #'
 #' @details \code{R(i, t)}, the return on asset \code{i} at time \code{t},
 #' is assumed to follow a factor model of the form, \cr \cr
@@ -23,7 +23,7 @@
 #' argument. Note that the default of \code{use="pairwise.complete.obs"} for
 #' handling NAs restricts the method to "pearson".
 #'
-#' @param object fit object of class \code{tsfm}, \code{sfm} or \code{ffm}.
+#' @param object fit object of class \code{tsfm} or \code{ffm}.
 #' @param factor.cov factor covariance matrix (optional); defaults to the
 #' sample covariance matrix.
 #' @param use method for computing covariances in the presence of missing
@@ -64,8 +64,8 @@
 
 fmCov <- function(object, ...){
   # check input object validity
-  if (!inherits(object, c("tsfm", "sfm", "ffm"))) {
-    stop("Invalid argument: Object should be of class 'tsfm', 'sfm' or 'ffm'.")
+  if (!inherits(object, c("tsfm", "ffm"))) {
+    stop("Invalid argument: Object should be of class 'tsfm' or 'ffm'.")
   }
   UseMethod("fmCov")
 }
@@ -99,16 +99,6 @@ fmCov.tsfm <- function(object, factor.cov, use="pairwise.complete.obs", ...) {
   }
 
   return(cov.fm)
-}
-
-#' @rdname fmCov
-#' @method fmCov sfm
-#' @export
-
-fmCov.sfm <- function(object, use="pairwise.complete.obs", ...) {
-
-  # already computed via fitSfm function
-  return(object$Omega)
 }
 
 #' @rdname fmCov

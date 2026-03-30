@@ -74,8 +74,8 @@
 
 fmSdDecomp <- function(object, ...){
   # check input object validity
-  if (!inherits(object, c("tsfm", "sfm", "ffm"))) {
-    stop("Invalid argument: Object should be of class 'tsfm', 'sfm' or 'ffm'.")
+  if (!inherits(object, c("tsfm", "ffm"))) {
+    stop("Invalid argument: Object should be of class 'tsfm' or 'ffm'.")
   }
   UseMethod("fmSdDecomp")
 }
@@ -109,42 +109,6 @@ fmSdDecomp.tsfm <- function(object, factor.cov,
     if (!identical(dim(factor.cov), as.integer(c(ncol(factor), ncol(factor))))) {
       stop("Dimensions of user specified factor covariance matrix are not 
            compatible with the number of factors in the fitTsfm object")
-    }
-  }
-  
-  factor.star.cov <- make_factor_star_cov(factor.cov)
-  
-  # compute factor model sd; a vector of length N
-  Sd.fm <- sqrt(rowSums(beta.star %*% factor.star.cov * beta.star))
-  
-  # compute marginal, component and percentage contributions to sd
-  # each of these have dimensions: N x (K+1)
-  mSd <- (t(factor.star.cov %*% t(beta.star)))/Sd.fm 
-  cSd <- mSd * beta.star 
-  pcSd = 100* cSd/Sd.fm 
-  
-  fm.sd.decomp <- list(Sd.fm=Sd.fm, mSd=mSd, cSd=cSd, pcSd=pcSd)
-  
-  return(fm.sd.decomp)
-}
-
-#' @rdname fmSdDecomp
-#' @method fmSdDecomp sfm
-#' @export
-
-fmSdDecomp.sfm <- function(object, factor.cov,
-                           use="pairwise.complete.obs", ...) {
-  
-  beta.star <- make_beta_star(object$loadings, object$resid.sd)
-  
-  # get cov(F): K x K
-  factor <- as.matrix(object$factors)
-  if (missing(factor.cov)) {
-    factor.cov = cov(factor, use=use, ...) 
-  } else {
-    if (!identical(dim(factor.cov), as.integer(c(ncol(factor), ncol(factor))))) {
-      stop("Dimensions of user specified factor covariance matrix are not 
-           compatible with the number of factors in the fit object")
     }
   }
   

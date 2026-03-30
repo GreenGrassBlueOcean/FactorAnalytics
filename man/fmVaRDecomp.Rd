@@ -3,22 +3,12 @@
 \name{fmVaRDecomp}
 \alias{fmVaRDecomp}
 \alias{fmVaRDecomp.tsfm}
-\alias{fmVaRDecomp.sfm}
 \alias{fmVaRDecomp.ffm}
 \title{Decompose VaR into individual factor contributions}
 \usage{
 fmVaRDecomp(object, ...)
 
 \method{fmVaRDecomp}{tsfm}(
-  object,
-  factor.cov,
-  p = 0.05,
-  type = c("np", "normal"),
-  use = "pairwise.complete.obs",
-  ...
-)
-
-\method{fmVaRDecomp}{sfm}(
   object,
   factor.cov,
   p = 0.05,
@@ -37,7 +27,7 @@ fmVaRDecomp(object, ...)
 )
 }
 \arguments{
-\item{object}{fit object of class \code{tsfm}, \code{sfm} or \code{ffm}.}
+\item{object}{fit object of class \code{tsfm} or \code{ffm}.}
 
 \item{...}{other optional arguments passed to \code{\link[stats]{quantile}}.}
 
