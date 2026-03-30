@@ -7,6 +7,7 @@
 #   2. 2-char + style model (numeric exposures) — LS
 #   3. Downstream methods: fmCov, fmSdDecomp, fmVaRDecomp, fmEsDecomp
 #   4. WLS and W-Rob fit methods (pure + style)
+#   5. Performance attribution (paFm) on MSCI models
 
 # ── Synthetic data: add a REGION column to stocks145scores6 ──
 # Use 2 regions with balanced assignment per sector (min 2 per cell)
@@ -255,4 +256,81 @@ test_that("MSCI 2-char + style model works with W-Rob", {
   # Style betas should vary
   expect_gt(sd(fit$beta[, "ROE"]), 0)
   expect_gt(sd(fit$beta[, "BP"]), 0)
+})
+
+# ── 5. Performance attribution (paFm) ──
+
+test_that("paFm produces correct structure on MSCI pure model", {
+  fit <- fitFfm(data = dat_msci_test, asset.var = "TICKER", ret.var = "RETURN",
+                date.var = "DATE", exposure.vars = c("SECTOR", "REGION"),
+                addIntercept = TRUE)
+  pa <- paFm(fit)
+
+  expect_s3_class(pa, "pafm")
+  expect_equal(nrow(pa$cum.ret.attr.f), n_assets)
+  expect_equal(ncol(pa$cum.ret.attr.f), length(fit$factor.names))
+  expect_equal(colnames(pa$cum.ret.attr.f), colnames(fit$factor.returns))
+  expect_equal(length(pa$cum.spec.ret), n_assets)
+  expect_equal(length(pa$attr.list), n_assets)
+
+  # Each attr.list entry: factors + specific.returns columns
+  entry <- pa$attr.list[[fit$asset.names[1]]]
+  expect_equal(ncol(entry), length(fit$factor.names) + 1)
+  expect_true("specific.returns" %in% colnames(entry))
+})
+
+test_that("paFm produces correct structure on MSCI + style model", {
+  fit <- fitFfm(data = dat_msci_test, asset.var = "TICKER", ret.var = "RETURN",
+                date.var = "DATE",
+                exposure.vars = c("SECTOR", "REGION", "ROE", "BP"),
+                addIntercept = TRUE)
+  pa <- paFm(fit)
+
+  expect_s3_class(pa, "pafm")
+  expect_equal(nrow(pa$cum.ret.attr.f), n_assets)
+  expect_equal(ncol(pa$cum.ret.attr.f), length(fit$factor.names))
+  expect_equal(colnames(pa$cum.ret.attr.f), colnames(fit$factor.returns))
+  expect_equal(length(pa$cum.spec.ret), n_assets)
+  expect_equal(length(pa$attr.list), n_assets)
+
+  # Style factors should appear in attribution columns
+  expect_true("ROE" %in% colnames(pa$cum.ret.attr.f))
+  expect_true("BP" %in% colnames(pa$cum.ret.attr.f))
+})
+
+test_that("paFm decomposition identity holds on MSCI + style", {
+  fit <- fitFfm(data = dat_msci_test, asset.var = "TICKER", ret.var = "RETURN",
+                date.var = "DATE",
+                exposure.vars = c("SECTOR", "REGION", "ROE", "BP"),
+                addIntercept = TRUE)
+  pa <- paFm(fit)
+
+  # For each period: sum of attributed returns + specific = actual return
+  for (k in fit$asset.names[1:3]) {
+    attr_k <- pa$attr.list[[k]]
+    row_total <- rowSums(coredata(attr_k))
+    idx <- which(fit$data[[fit$asset.var]] == k)
+    actual_ret <- fit$data[idx, fit$ret.var]
+    expect_equal(row_total, actual_ret, tolerance = 1e-12,
+                 label = paste("decomposition for", k))
+  }
+})
+
+test_that("plot/print/summary.pafm work on MSCI model", {
+  fit <- fitFfm(data = dat_msci_test, asset.var = "TICKER", ret.var = "RETURN",
+                date.var = "DATE",
+                exposure.vars = c("SECTOR", "REGION", "ROE", "BP"),
+                addIntercept = TRUE)
+  pa <- paFm(fit)
+
+  expect_no_error(capture.output(print(pa)))
+  expect_no_error(summary(pa))
+
+  # Single-asset plots avoid the margin issue with multi-panel
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  expect_no_error(
+    plot(pa, plot.single = TRUE, fundName = fit$asset.names[1],
+         which.plot.single = "1L")
+  )
 })
