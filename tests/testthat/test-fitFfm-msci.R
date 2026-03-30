@@ -3,9 +3,10 @@
 # The MSCI branch is triggered when specFfm() detects > 1 character exposure.
 # It uses a dual restriction matrix to handle rank deficiency from two
 # categorical variables (e.g. Sector + Region). This file tests:
-#   1. Pure 2-char model (no numeric exposures)
-#   2. 2-char + style model (numeric exposures)
+#   1. Pure 2-char model (no numeric exposures) — LS
+#   2. 2-char + style model (numeric exposures) — LS
 #   3. Downstream methods: fmCov, fmSdDecomp, fmVaRDecomp, fmEsDecomp
+#   4. WLS and W-Rob fit methods (pure + style)
 
 # ── Synthetic data: add a REGION column to stocks145scores6 ──
 # Use 2 regions with balanced assignment per sector (min 2 per cell)
@@ -180,4 +181,78 @@ test_that("MSCI pure model risk decomposition percentage contributions sum to 10
   es_dec <- fmEsDecomp(fit)
   row_sums_es <- rowSums(es_dec$pcES)
   expect_true(all(abs(row_sums_es - 100) < 1e-6))
+})
+
+# ── 4. WLS and W-Rob fit methods ──
+
+# Helper: fit MSCI model, check structure and downstream methods
+check_msci_fit <- function(fit, expected_n_factors, label) {
+  expect_s3_class(fit, "ffm")
+  expect_equal(length(fit$exposures.char), 2)
+
+  # Core dimensions
+
+  expect_equal(length(fit$factor.names), expected_n_factors)
+  expect_equal(dim(fit$beta), c(n_assets, expected_n_factors))
+  expect_equal(ncol(fit$factor.returns), expected_n_factors)
+  expect_equal(colnames(fit$beta), fit$factor.names)
+  expect_equal(colnames(fit$factor.returns), fit$factor.names)
+
+  # factor.cov symmetric and conformable
+  expect_equal(dim(fit$factor.cov), rep(expected_n_factors, 2))
+  expect_true(isSymmetric(fit$factor.cov))
+
+  # Downstream: fmCov
+  cov_mat <- fmCov(fit)
+  expect_equal(dim(cov_mat), c(n_assets, n_assets))
+  expect_true(isSymmetric(cov_mat))
+  expect_true(all(diag(cov_mat) > 0))
+
+  # Downstream: risk decomposition VaR sums to 100%
+  var_dec <- fmVaRDecomp(fit)
+  expect_equal(dim(var_dec$pcVaR), c(n_assets, expected_n_factors + 1))
+  row_sums <- rowSums(var_dec$pcVaR)
+  expect_true(all(abs(row_sums - 100) < 1e-6))
+}
+
+test_that("MSCI pure 2-char model works with WLS", {
+  fit <- fitFfm(data = dat_msci_test, asset.var = "TICKER", ret.var = "RETURN",
+                date.var = "DATE", exposure.vars = c("SECTOR", "REGION"),
+                addIntercept = TRUE, fit.method = "WLS")
+  check_msci_fit(fit, 1 + n_sectors + n_regions, "WLS pure")
+})
+
+test_that("MSCI 2-char + style model works with WLS", {
+  fit <- fitFfm(data = dat_msci_test, asset.var = "TICKER", ret.var = "RETURN",
+                date.var = "DATE",
+                exposure.vars = c("SECTOR", "REGION", "ROE", "BP"),
+                addIntercept = TRUE, fit.method = "WLS")
+  check_msci_fit(fit, 1 + 2 + n_sectors + n_regions, "WLS+style")
+
+  # Style betas should vary
+  expect_gt(sd(fit$beta[, "ROE"]), 0)
+  expect_gt(sd(fit$beta[, "BP"]), 0)
+})
+
+test_that("MSCI pure 2-char model works with W-Rob", {
+  skip_if_not_installed("RobStatTM")
+  fit <- fitFfm(data = dat_msci_test, asset.var = "TICKER", ret.var = "RETURN",
+                date.var = "DATE", exposure.vars = c("SECTOR", "REGION"),
+                addIntercept = TRUE, fit.method = "W-Rob")
+  check_msci_fit(fit, 1 + n_sectors + n_regions, "W-Rob pure")
+})
+
+test_that("MSCI 2-char + style model works with W-Rob", {
+  skip_if_not_installed("RobStatTM")
+  # lmrobdetMM may not converge on some cross-sections with many dummies
+  fit <- suppressWarnings(fitFfm(
+    data = dat_msci_test, asset.var = "TICKER", ret.var = "RETURN",
+    date.var = "DATE",
+    exposure.vars = c("SECTOR", "REGION", "ROE", "BP"),
+    addIntercept = TRUE, fit.method = "W-Rob"))
+  check_msci_fit(fit, 1 + 2 + n_sectors + n_regions, "W-Rob+style")
+
+  # Style betas should vary
+  expect_gt(sd(fit$beta[, "ROE"]), 0)
+  expect_gt(sd(fit$beta[, "BP"]), 0)
 })
