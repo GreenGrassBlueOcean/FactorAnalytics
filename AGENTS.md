@@ -26,6 +26,7 @@ architecture reference are in:
 | **Phase 9 — S3 Method Consolidation** | ✅ Complete | 4 shared risk helpers (`make_beta_star`, `make_factor_star_cov`, `normalize_fm_residuals`, `make_resid_diag`) in `R/helpers-risk.R`. Integrated into 8 files / 15+ methods. `fmSdDecomp.ffm` NA-zeroing inconsistency fixed. 690 assertions across 23 test files, 0 failures. R CMD check clean. |
 | **Phase 9.6 — riskDecomp Dispatcher** | ✅ Complete | `riskDecomp.R` 762→~200 lines: thin dispatcher to 6 specialized methods. Portfolio residual normalization bug eliminated from `repRisk` path. Orphaned `@importFrom` directives relocated to correct files. 67 dispatch assertions. 757 total assertions across 24 test files, 0 failures. R CMD check clean (0 errors, 0 warnings, 1 note). |
 | **Phase 9.7 — Branch 2/3 Unification** | ✅ Complete | `extractRegressionStats` branches 2 (sector) and 3 (MSCI) unified via 2 helpers (`extract_restricted_returns`, `build_last_period_beta`). ~90 lines → ~10 lines in caller. Branch 2 column ordering fixed (`factor.returns` now matches `factor.names` for all model types). `normalize_fm_residuals` POSIXct→Date timezone bug fixed. 782 assertions across 24 test files, 0 failures, 0 warnings. |
+| **Phase 10 — Risk Reporting Cleanup** | ✅ Complete | 5 repRisk.ffm bugs fixed. 340 lines orphaned `.sfm` dead code removed (4 S3 methods + `paFm` branch). `.tsfm`/`.ffm` decomposition methods deduplicated via `extract_fm_components()` + 3 shared `_impl` functions. `repRisk.R` refactored 760→461 lines via slot-lookup table + `.repRisk_impl()`. Latent `as.Date()` timezone bug fixed in `fmVaRDecomp.ffm`/`fmEsDecomp.ffm`. `missing(factor.cov)` → `NULL` default across 6 S3 methods. 831 assertions across 25 test files, 0 failures. R CMD check clean. |
 
 ## Test Infrastructure
 
@@ -65,7 +66,8 @@ architecture reference are in:
   - `test-helpers-extract-stats.R` — 47 assertions: build_factor_names (6 model configs + round-trip), map_coefficients_to_factor_returns (sector/MSCI/pure, exact match against fitted models) (Phase 8), extract_restricted_returns + build_last_period_beta structure tests, colnames(factor.returns)==factor.names invariant for all model types (Phase 9.7)
   - `test-helpers-risk.R` — 33 assertions: make_beta_star (asset/portfolio/ffm), make_factor_star_cov (structure/round-trip/NULL colnames), normalize_fm_residuals (asset/portfolio correctness), make_resid_diag (multi/single asset) (Phase 9)
   - `test-riskDecomp-dispatch.R` — 67 assertions: riskDecomp dispatch equivalence (Sd/VaR/ES × asset/port × tsfm/ffm), invert convention, input validation, repRisk smoke (Phase 9.6)
-- **Total:** 782 assertions across 24 test files, 0 failures, 0 skips.
+  - `test-repRisk.R` — 29 assertions: repRisk baseline smoke (tsfm+ffm), S3 dispatch, bug regressions (5 bugs), decomp×risk structure checks, plot paths (Phase 10)
+- **Total:** 831 assertions across 25 test files, 0 failures, 0 skips.
 - **Coverage:** 57.8% (post-Phase 9, commit `526d2c3`). Baseline was 46.4% at commit `4b58a6e`.
 - **Tolerances:** Coefficients/factor returns `1e-10`, covariance `1e-8`, risk decomp `1e-6`.
 - **Setup:** `tests/testthat/setup.R` loads all bundled datasets and prepares the
