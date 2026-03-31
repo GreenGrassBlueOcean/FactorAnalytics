@@ -40,6 +40,7 @@ Suggests:
     parallel,
     PCRA,
     R.rsp,
+    RiskPortfolios,
     RobStatTM,
     robustbase,
     rugarch,

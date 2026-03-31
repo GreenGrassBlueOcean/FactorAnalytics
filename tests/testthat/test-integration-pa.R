@@ -77,3 +77,14 @@ test_that("moment components have consistent asset names across slots", {
   expect_equal(rownames(fmCov(fit_pa)), rownames(fit_pa$beta))
   expect_equal(colnames(fmCov(fit_pa)), rownames(fit_pa$beta))
 })
+
+test_that("fmCov output works with RiskPortfolios", {
+  skip_if_not_installed("RiskPortfolios")
+  Sigma <- fmCov(fit_pa)
+  w <- RiskPortfolios::optimalPortfolio(
+    Sigma = Sigma, control = list(type = "erc", constraint = "lo")
+  )
+  expect_equal(length(w), nrow(Sigma))
+  expect_equal(sum(w), 1, tolerance = 1e-6)
+  expect_true(all(w >= 0))
+})

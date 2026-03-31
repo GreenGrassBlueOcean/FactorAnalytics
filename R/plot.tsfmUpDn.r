@@ -83,9 +83,15 @@ plot.tsfmUpDn <- function(x,asset.name=NULL,SFM.line=FALSE,LSandRob=FALSE,
   # add LS/Robust Up/Dn comparison
   
   if (LSandRob) {
-    fit.methods <- c("LS","Robust")
-    x$call$fit.method <- fit.methods[!fit.methods%in%x$Up$fit.method]
-    x.alt <- eval(x$call)  
+    fit.methods <- c("LS", "Robust")
+    alt.method <- fit.methods[!fit.methods %in% x$Up$fit.method]
+    # Refit with the alternative method using stored data.
+    # x$data already has excess returns applied, so rf.name=NULL.
+    x.alt <- fitTsfmUpDn(asset.names = x$Up$asset.names,
+                          mkt.name = mkt.name,
+                          rf.name = NULL,
+                          data = x$data,
+                          fit.method = alt.method)
   }
   
   if (is.null(asset.name)) { 
@@ -139,38 +145,27 @@ plot.tsfmUpDn <- function(x,asset.name=NULL,SFM.line=FALSE,LSandRob=FALSE,
       }
       
       if (add.legend){
+        is.rob <- x$Up$fit.method == "Robust"
+        orig.label <- if (is.rob) "BetaRob" else "Beta"
         
         if (LSandRob){
-            if (x$call$fit.method=="Robust") {
-                beta.legend = c(paste("Up Beta","      =",up.beta,seq=""),
-                                paste("Up BetaRob =",up.beta.alt,seq=""),
-                                paste("Dn Beta","      =",dn.beta,seq=""),
-                                paste("Dn BetaRob =",dn.beta.alt,seq=""))
-            } else {
-                beta.legend = c("Up BetaRob","Up Beta","Dn BetaRob","Dn Beta")
-                beta.legend = c(paste("Up BetaRob =",up.beta.alt,seq=""),
-                                paste("Up Beta","      =",up.beta,seq=""),
-                                paste("Dn BetaRob =",dn.beta.alt,seq=""),
-                                paste("Dn Beta","      =",dn.beta,seq=""))
-                                
-            }
-          legend(legend.loc,legend=beta.legend,ncol=1,cex=legend.cex,bty="n",lty=rep(line.type,2),col=rep(line.color,2))
+            alt.label <- if (is.rob) "Beta" else "BetaRob"
+            beta.legend <- c(
+              paste0("Up ", orig.label, " = ", up.beta),
+              paste0("Up ", alt.label,  " = ", up.beta.alt),
+              paste0("Dn ", orig.label, " = ", dn.beta),
+              paste0("Dn ", alt.label,  " = ", dn.beta.alt)
+            )
+          legend(legend.loc, legend = beta.legend, ncol = 1, cex = legend.cex,
+                 bty = "n", lty = rep(line.type, 2), col = rep(line.color, 2))
         } else {
-            if (x$Up$fit.method=="Robust") {
-            beta.legend = c(paste("Up BetaRob =",up.beta.alt,seq=""),
-                            paste("Dn BetaRob =",dn.beta.alt,seq=""))
-          } else {
-            beta.legend = c("Up Beta","Dn Beta")
-            beta.legend = c(paste("Up Beta =",up.beta,seq=""),
-                            paste("Dn Beta =",dn.beta,seq=""))
-          }
-                                   
-          legend(legend.loc,legend=beta.legend,ncol=1,cex=legend.cex,bty="n")
+            beta.legend <- c(
+              paste0("Up ", orig.label, " = ", up.beta),
+              paste0("Dn ", orig.label, " = ", dn.beta)
+            )
+          legend(legend.loc, legend = beta.legend, ncol = 1, cex = legend.cex,
+                 bty = "n")
         }
-        # legend.lty = c(line.type,NA,NA,line.type,NA,NA) 
-        #  legend.col = c(line.col,NA,NA,line.col,NA,NA)
-         # legend(legend.loc,legend=legend.txt,ncol=2,lty=legend.lty,col=legend.col,cex=legend.cex)            
-                
       }
       assets.name.all <- assets.name.all[-1]
       par(ask=TRUE)

@@ -71,7 +71,9 @@ architecture reference are in:
   - `test-assetDecomp.R` — 32 assertions: assetDecomp() Sd/VaR/ES × np/normal decomposition, structure checks, percentage-sums-to-100, ES≤VaR ordering (incl. normal ES sign regression), NULL/equal weights, slot-based column access (Post-Phase 10)
   - `test-residualizeReturns.R` — 46 assertions: residualizeReturns() core functionality (yVar update, flags, column merge, variance reduction), isBenchExcess toggle, immutability, error paths (non-xts, missing colnames), print.ffmSpec conditional messages (residualized/standardized/both), end-to-end fitFfmDT pipeline on residualized specObj; standardizeReturns() GARCH(1,1) output structure, ret/sigma identity, manual recursion verification, positivity, custom params, immutability, end-to-end pipeline; lagExposures() shift verification (numeric + character), first-period drop, flag/key/idx preservation, immutability (Post-Phase 10)
   - `test-fitTsfmLagLeadBeta.R` — 24 assertions: fitTsfmLagLeadBeta() lag-only/lag+lead models (LagLeadBeta=1,2), rf.name=NULL, rf.name bug regression, error paths (missing mkt.name, invalid LagLeadBeta), S3 method compatibility (Post-Phase 10)
-- **Total:** 1127 assertions across 29 test files, 0 failures, 2 skips (interactive `par(ask)` test, single-asset ffm not constructible).
+  - `test-selectCRSPandSPGMI.R` — 15 assertions: selectCRSPandSPGMI() structure/filtering (date range, CapGroup, Sector NA removal), LargeCap+Nstocks params, end-to-end fitFfm pipeline (Post-Phase 10, requires PCRA)
+  - `test-coverage-expansion.R` — 77 assertions: fitTsfmMT, summary.tsfm HC/HAC/lars/labels, summary.tsfmUpDn+print, summary.ffm labels=FALSE, predict.tsfm newdata, predict.ffm pred.date+backward compat, fmVaRDecomp/fmEsDecomp type="normal", fmRsq barplot/title/combined, plot.pafm which.plot paths, plot.tsfmUpDn SFM.line+LSandRob (LS+Robust originals)+Robust-only legend, portSdDecomp user factor.cov, exposuresTseries (Post-Phase 10)
+- **Total:** 1219 assertions across 31 test files, 0 failures, 2 skips (interactive `par(ask)` test, single-asset ffm not constructible).
 - **Coverage:** 80.0% (Codecov, commit `84ac63f`). Previously 68.4% at Phase 10 end, 57.8% at Phase 9 commit `526d2c3`. Baseline was 46.4% at commit `4b58a6e`.
 - **Tolerances:** Coefficients/factor returns `1e-10`, covariance `1e-8`, risk decomp `1e-6`.
 - **Setup:** `tests/testthat/setup.R` loads all bundled datasets and prepares the
@@ -463,6 +465,39 @@ excess returns and alphas were systematically wrong.
 
 **Fix:** Changed to `rf.name <- if (!is.null(rf.name)) make.names(rf.name) else NULL`,
 also handling the `rf.name = NULL` case correctly.
+
+### `plot.tsfmUpDn()` LSandRob path: 3 bugs — FIXED
+
+**Severity:** Medium — the entire LSandRob comparison feature was broken, plus the
+Robust-only legend path crashed unconditionally.
+
+**Bug 1 — `eval(x$call)` fails outside original call environment** (line 88):
+`fitTsfmUpDn()` stores `match.call()`, which captures literal expressions (e.g.,
+`colnames(managers[,(1:6)])`). `plot.tsfmUpDn()` modified `x$call$fit.method` then
+did `eval(x$call)` to refit with the alternative method. This fails because the
+symbols from the original call context (like `managers`) aren't available inside the
+plot method's environment.
+
+**Bug 2 — Legend labels swapped when original model is Robust** (lines 150-154):
+When the original model used `"Robust"` and the alternative was `"LS"`, the else
+branch labeled `up.beta.alt` (from the LS model) as `"BetaRob"` and `up.beta`
+(from the Robust model) as `"Beta"` — backwards.
+
+**Bug 3 — Undefined `up.beta.alt`/`dn.beta.alt` when `LSandRob=FALSE` + Robust**
+(lines 159-161): The non-LSandRob legend path for Robust models referenced
+`up.beta.alt` and `dn.beta.alt`, which are only defined inside the `if (LSandRob)`
+block. Any call to `plot(fit_robust, LSandRob=FALSE)` crashed with "object not found".
+
+**Additional cosmetic fix:** `seq=""` (a no-op typo for `sep=""` in `paste()`) replaced
+with `paste0()` throughout the legend code.
+
+**Fix (applied to `R/plot.tsfmUpDn.r`):**
+- Replaced `eval(x$call)` with direct `fitTsfmUpDn()` call using stored object data
+  (`x$data` already has excess returns applied, so `rf.name=NULL`).
+- Rewrote legend block: uses `x$Up$fit.method` to determine `orig.label` and
+  `alt.label`, with correct assignment of `"Beta"`/`"BetaRob"` to original vs
+  alternative model betas.
+- Non-LSandRob path now only references `up.beta`/`dn.beta` (always defined).
 
 ## Performance Optimisations (Phase 2)
 
