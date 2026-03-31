@@ -249,8 +249,16 @@ fitTsfm <- function(asset.names, factor.names, mkt.name=NULL, rf.name=NULL,
   # convert data into an xts object and hereafter work with xts objects
   data.xts <- PerformanceAnalytics::checkData(data)
   
-  # convert index to 'Date' format for uniformity 
-  time(data.xts) <- as.Date(time(data.xts))
+  # convert index to 'Date' format for uniformity
+  # use source timezone for POSIXct to avoid shifting dates on non-UTC systems
+  idx <- time(data.xts)
+  if (inherits(idx, "POSIXct")) {
+    tz <- attr(idx, "tzone")
+    if (is.null(tz) || tz == "") tz <- Sys.timezone()
+    time(data.xts) <- as.Date(idx, tz = tz)
+  } else {
+    time(data.xts) <- as.Date(idx)
+  }
   
   # extract columns to be used in the time series regression
   dat.xts <- data.xts[ ,c(asset.names, factor.names)]
@@ -582,7 +590,15 @@ fitted.tsfm <- function(object, ...) {
       colnames(fitted.xts) <- object$asset.names
     }
   }
-  time(fitted.xts) <- as.Date(time(fitted.xts))
+  # use source timezone for POSIXct to avoid shifting dates on non-UTC systems
+  fidx <- time(fitted.xts)
+  if (inherits(fidx, "POSIXct")) {
+    ftz <- attr(fidx, "tzone")
+    if (is.null(ftz) || ftz == "") ftz <- Sys.timezone()
+    time(fitted.xts) <- as.Date(fidx, tz = ftz)
+  } else {
+    time(fitted.xts) <- as.Date(fidx)
+  }
   return(fitted.xts)
 }
 

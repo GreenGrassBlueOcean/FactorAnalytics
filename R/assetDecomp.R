@@ -50,8 +50,8 @@ assetDecomp = function(object, weights=NULL, rm, p, type = c("np", "normal"), ..
 {
   type = type[1]
   n.assets = length(object$asset.names)
-  returns = matrix(object$data[,"RETURN"], n.assets, length(object$time.periods))
-  returns = xts(t(returns), order.by =unique(object$data[,"DATE"] ))
+  returns = matrix(object$data[, object$ret.var], n.assets, length(object$time.periods))
+  returns = xts(t(returns), order.by = unique(object$data[, object$date.var]))
   if(is.null(weights)) {weights = matrix(rep(1/n.assets, n.assets), ncol = 1)}
   else weights = matrix(weights, ncol = 1)
   port.Sd = sqrt(t(weights) %*% cov(returns) %*% weights)
@@ -97,8 +97,8 @@ assetDecomp = function(object, weights=NULL, rm, p, type = c("np", "normal"), ..
          {
           if(type == "normal")
           {
-            RM = drop(t(weights) %*% (apply(returns, 2, mean)) + port.Sd*dnorm(qnorm(p))*(1/p))
-            MCR = lapply(seq(1:n.assets), FUN = function(x){mean((returns)[,x])+ as.numeric((cov(returns)[,x] %*% weights)*dnorm(qnorm(p))*(1/p)/port.Sd)})
+            RM = drop(t(weights) %*% (apply(returns, 2, mean)) - port.Sd*dnorm(qnorm(p))*(1/p))
+            MCR = lapply(seq(1:n.assets), FUN = function(x){mean((returns)[,x]) - as.numeric((cov(returns)[,x] %*% weights)*dnorm(qnorm(p))*(1/p)/port.Sd)})
             CR = weights * unlist(MCR)
             rownames(CR) = object$asset.names
             PCR = CR/RM*100

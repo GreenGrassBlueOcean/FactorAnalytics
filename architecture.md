@@ -2,7 +2,7 @@
 
 > Reference document for the GreenGrassBlueOcean refactoring effort.
 > Generated from `braverock/FactorAnalytics` v2.4.2 (2024-12-12).
-> Updated 2026-03-30 with Phases 0–9.7 findings.
+> Updated 2026-03-31 with Phases 0–10 findings and post-Phase 10 bug discoveries.
 
 ---
 
@@ -572,6 +572,11 @@ entirely — parallel execution now uses `parallel::parLapply()` with explicit
 `lapply()`. The single `RCurl::merge.list()` call was replaced with native R list
 merging.
 
+**Bug fixed:** `.fmmc.proc()` had a Cartesian join bug that produced incorrect Monte
+Carlo distributions (T² rows instead of T). Fixed by removing `as.matrix()` that
+stripped xts class, adding timezone-aware Date index alignment, and fixing
+`fitTsfm()` `as.Date()` timezone shift. See Section 4.12.1 for full details.
+
 ### 4.9 Bugs Fixed During Phase 5 (Input Validation)
 
 1. **`fitFfm()` `analysis` parameter length check** (line 294):
@@ -642,6 +647,104 @@ merging.
    VaR/ES estimates.
    **Fix:** Detect `POSIXct` index and use the stored timezone attribute (falling back
    to `Sys.timezone()` when the attribute is empty) for the `as.Date()` conversion.
+
+### 4.12 Bugs Discovered Post-Phase 10 (Coverage Expansion)
+
+These bugs were discovered while writing smoke tests for the 0%-coverage files
+`fmmc.R`, `fmmcSemiParam.R`, and `assetDecomp.R`.
+
+#### 4.12.1 `.fmmc.proc()` Cartesian join in residual-factor merge — FIXED
+
+**Severity:** High — produced incorrect Monte Carlo return distributions.
+
+**Bug:** `.fmmc.proc()` at line 115 did:
+```r
+.data <- as.matrix(merge(as.matrix(factors.data), resid))
+```
+`as.matrix(factors.data)` stripped the xts class, so `merge()` dispatched to
+`merge.data.frame` instead of `merge.xts`. With no shared column names between the
+factor matrix (now a plain matrix with no index) and the residual xts, this produced a
+Cartesian (cross) join: `T_factors × T_resid` rows instead of `T` rows.
+
+**Impact:** The `returns` matrix used to build the joint empirical density had `T²`
+entries. For the `managers` dataset this was 120 × 120 = 14,400 rows instead of ~120.
+The density estimate was meaningless and all downstream `fmmc.estimate.se()` results
+(risk/performance estimates and their bootstrap standard errors) were unreliable.
+
+**Root causes (3 sites):**
+1. `as.matrix()` before `merge()` strips the xts time index (line 115)
+2. `as.matrix(factors.data[...])` in the NA-beta branch (line 110) also strips xts
+3. `fitTsfm()` line 253: `as.Date(time(data.xts))` defaults to UTC, shifting dates
+   by 1 day on non-UTC systems (same timezone pattern as Section 4.11.2). This caused
+   `merge.xts` to see non-overlapping Date vs POSIXct indices even after fixing (1).
+
+**Fix (applied to 3 files):**
+- `R/fmmc.R` line 110: Removed `as.matrix()`, added `drop = FALSE` to preserve xts.
+- `R/fmmc.R` line 115: Removed inner `as.matrix()`. Added POSIXct→Date index
+  conversion on `resid` (timezone-aware) before `merge()`.
+- `R/fitTsfm.R` lines 253, 591: Replaced `as.Date(time(data.xts))` with
+  timezone-aware conversion (`as.Date(idx, tz = tz)` where tz is sourced from
+  the POSIXct attribute or `Sys.timezone()` as fallback).
+
+#### 4.12.2 `assetDecomp()` normal ES sign error — FIXED
+
+**Severity:** Medium — normal-distribution ES had wrong sign.
+
+**Bug:** `assetDecomp()` computed normal ES (line 100) as:
+```r
+RM = drop(t(weights) %*% (apply(returns, 2, mean)) + port.Sd * dnorm(qnorm(p)) * (1/p))
+```
+For `p = 0.05`: `dnorm(qnorm(0.05)) / 0.05 ≈ 2.063`. The formula computed
+`mean + 2.063 * sigma`, which is **positive** — a right-tail value. The correct formula
+for left-tail ES under the normal distribution is:
+
+`ES = μ - σ · φ(Φ⁻¹(p)) / p`
+
+The `+` on line 100 should have been `-`. The same sign error propagated to the marginal
+component risk formula on line 101.
+
+**Numerical impact:** For the DJIA dataset with GMV weights:
+- Normal VaR (correct): -0.047
+- Normal ES (buggy): +0.074 → Normal ES (fixed): -0.061
+
+**Fix:** Changed `+` to `-` on both the portfolio ES (line 100) and marginal
+component risk (line 101) formulas.
+
+**Not affected:** Non-parametric ES (uses empirical quantiles, was always correct).
+
+#### 4.12.3 `assetDecomp()` hard-coded column names — FIXED
+
+**Severity:** Low — limited `assetDecomp()` to datasets with specific column names.
+
+**Bug:** `assetDecomp()` hard-coded `object$data[,"RETURN"]` (line 53) and
+`object$data[,"DATE"]` (line 54) instead of using `object$ret.var` and
+`object$date.var`. This meant the function only worked with datasets where the return
+column was literally named `"RETURN"` and the date column `"DATE"` (e.g.,
+`factorDataSetDjia5Yrs`). Calling it on a model fitted from `stocks145scores6`
+failed with `"undefined columns selected"`.
+
+**Fix:** Replaced `"RETURN"` → `object$ret.var` and `"DATE"` → `object$date.var`
+on lines 53–54.
+
+#### 4.12.4 `fitTsfm()` `as.Date()` timezone shift — FIXED
+
+**Severity:** Low–Medium — date labels on all tsfm output shifted by 1 day on
+non-UTC systems. Values unaffected.
+
+**Bug:** `fitTsfm()` line 253 did `time(data.xts) <- as.Date(time(data.xts))`.
+`PerformanceAnalytics::checkData()` parses character rownames as POSIXct using the
+local timezone. `as.Date.POSIXct` defaults to `tz = "UTC"`, so on a CET system,
+midnight-CET dates (23:00 previous day UTC) shifted back by one day. Same pattern
+on line 591 (`fitted.tsfm`).
+
+**Impact:** All `$data` dates, `lm` residual names, and fitted value dates in tsfm
+objects were shifted by 1 day on non-UTC systems. This was the root cause of the
+Date/POSIXct index mismatch that prevented the `.fmmc.proc()` fix (4.12.1) from
+working with a simple `as.matrix()` removal alone.
+
+**Fix:** Detect POSIXct index and use the stored timezone (or `Sys.timezone()` when
+the attribute is empty) for the `as.Date()` conversion. Same pattern as the
+Phase 9.7 fix in `normalize_fm_residuals` (Section 4.11.2).
 
 ---
 
@@ -965,7 +1068,10 @@ scale (percentages), not 0–1 (proportions).
 | `test-helpers-extract-stats.R` | 14 | `build_factor_names`, `map_coefficients_to_factor_returns`, `extract_restricted_returns`, `build_last_period_beta`, column ordering invariant | Behavioural (Phase 8 + 9.7) |
 | `test-helpers-risk.R` | 9 | `make_beta_star`, `make_factor_star_cov`, `normalize_fm_residuals`, `make_resid_diag` | Behavioural (Phase 9) |
 | `test-riskDecomp-dispatch.R` | 20 | riskDecomp dispatch equivalence (Sd/VaR/ES × asset/port × tsfm/ffm), invert convention, repRisk smoke | Behavioural (Phase 9.6) |
-| **Total** | **187** | | **782 assertions** |
+| `test-repRisk.R` | 10 | repRisk baseline smoke (tsfm+ffm), S3 dispatch, 5 bug regressions, decomp×risk structure, plot paths | Behavioural (Phase 10) |
+| `test-fmmc.R` | 15 | `fmmc()`, `fmmc.estimate.se()`, `.fmmc.default.args()`, `fmmcSemiParam()` Normal/CF/skew-t/empirical residuals, block bootstrap, input validation, Cartesian join regression | Smoke + behavioural (Post-Phase 10) |
+| `test-assetDecomp.R` | 9 | `assetDecomp()` Sd/VaR/ES × np/normal, percentage sums-to-100, ES≤VaR ordering (incl. normal ES sign regression), NULL/equal weights, slot-based column access | Smoke + behavioural (Post-Phase 10) |
+| **Total** | **221** | | **913 assertions** |
 
 **Conditional skips (added Phase 1):** Three test blocks skip when optional packages
 are absent:
@@ -1061,6 +1167,8 @@ These are properties that **must** hold after every phase:
 | **9 — S3 Method Consolidation** | ✅ Complete | 4 shared risk helpers in `helpers-risk.R`; integrated into 8 files / 15+ methods; `fmSdDecomp.ffm` NA-zeroing fix | 690 assertions; 23 test files. Commit `526d2c3`. |
 | **9.6 — riskDecomp Dispatcher** | ✅ Complete | `riskDecomp.R` 762→~200 lines: thin dispatcher; portfolio residual normalization bug eliminated from `repRisk` path; orphaned imports relocated | 757 assertions; 24 test files. Commit `8c2a429`. |
 | **9.7 — Branch 2/3 Unification** | ✅ Complete | `extract_restricted_returns` + `build_last_period_beta` helpers; ~90→~10 lines in caller; Branch 2 column ordering fixed; `normalize_fm_residuals` POSIXct→Date timezone bug fixed | 782 assertions; 24 test files; 0 warnings. Commit `b5770a1`. |
+| **10 — Risk Reporting Cleanup** | ✅ Complete | 5 repRisk.ffm bugs fixed; 340 lines orphaned `.sfm` dead code removed; `.tsfm`/`.ffm` decomposition methods deduplicated via `extract_fm_components()` + 3 `_impl` functions; `repRisk.R` 760→461 lines via slot-lookup + `.repRisk_impl()`; latent timezone bug fixed in `fmVaRDecomp.ffm`/`fmEsDecomp.ffm`; `missing(factor.cov)` → `NULL` default across 6 methods | 831 assertions; 25 test files. |
+| **Post-Phase 10 — Coverage Expansion** | ✅ Complete | Smoke tests for `fmmc`, `fmmcSemiParam`, `assetDecomp` (all 0% → covered); 3 pre-existing bugs discovered (Sections 4.12.1–4.12.3) | 907 assertions; 27 test files. Coverage 68.4% (Codecov). |
 
 ---
 
@@ -1081,3 +1189,62 @@ Key design decisions:
 
 The old 5-matrix workflow (`slack-notify-build.yml`) with Slack notifications and
 GhostScript/TinyTeX installation was removed in Phase 6.
+
+---
+
+## 14. Bug Resolution — Completed
+
+Four pre-existing bugs were discovered during post-Phase 10 coverage expansion
+(Section 4.12) and resolved. A fourth bug (`fitTsfm()` timezone shift) was discovered
+as the root cause of the Cartesian join fix not working in isolation.
+
+### 14.1 Resolution Summary
+
+| Priority | Bug | Section | Status | Files Changed |
+|----------|-----|---------|--------|---------------|
+| **1** | `assetDecomp()` hard-coded column names | 4.12.3 | ✅ Fixed | `R/assetDecomp.R` |
+| **2** | `assetDecomp()` normal ES sign error | 4.12.2 | ✅ Fixed | `R/assetDecomp.R` |
+| **3** | `.fmmc.proc()` Cartesian join | 4.12.1 | ✅ Fixed | `R/fmmc.R`, `R/fitTsfm.R` |
+| **3b** | `fitTsfm()` `as.Date()` timezone shift | 4.12.4 | ✅ Fixed | `R/fitTsfm.R` |
+
+### 14.2 Implementation Notes
+
+**Priority 3 was more complex than initially estimated.** Removing `as.matrix()` from
+line 115 was necessary but not sufficient: `merge.xts` still produced 2×T rows because
+`factors.data` had a Date index while `resid` had a POSIXct index (from
+`xts::as.xts(residuals(lm_obj))`). The Date/POSIXct mismatch was caused by `fitTsfm()`
+line 253 using `as.Date(time(data.xts))` which defaults to UTC, shifting dates by 1 day
+on non-UTC systems.
+
+The complete fix required three changes across two files:
+1. `R/fmmc.R` line 110: Preserve xts class (`drop = FALSE` instead of `as.matrix()`)
+2. `R/fmmc.R` line 115: Remove inner `as.matrix()` + add POSIXct→Date index alignment
+3. `R/fitTsfm.R` lines 253, 591: Timezone-aware `as.Date()` conversion
+
+The outer join (default `merge.xts`) was kept rather than inner join. NA rows from
+non-overlapping dates propagate through the matrix multiplication and are naturally
+handled by downstream consumers.
+
+### 14.3 Verification
+
+```
+[x] Priority 1: assetDecomp hard-coded column names
+    [x] Fix lines 53–54
+    [x] Add stocks145scores6 slot-based access test
+    [x] Verify DJIA tests pass
+
+[x] Priority 2: assetDecomp normal ES sign
+    [x] Fix lines 100–101
+    [x] Restore sign + ordering assertions (expect_lt(ES, 0), expect_lt(ES, VaR))
+
+[x] Priority 3: fmmc Cartesian join + fitTsfm timezone
+    [x] Fix fmmc.R lines 110, 115
+    [x] Fix fitTsfm.R lines 253, 591
+    [x] Add dimension regression assertion (T rows, not T²)
+    [x] End-to-end bootstrap SE test passes
+
+[x] Final
+    [x] R CMD check: 0 errors, 0 warnings (2 pre-existing notes)
+    [x] Full test suite: 913 assertions, 0 failures, 0 skips
+    [x] AGENTS.md bug entries updated (UNFIXED → FIXED)
+```

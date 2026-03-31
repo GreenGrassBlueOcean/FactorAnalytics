@@ -107,12 +107,19 @@
         beta <- beta[!is.na(c(beta)), 1, drop=FALSE]
         names.factors <- colnames(factors.data)
         names.beta    <- rownames(beta)
-        factors.data <- as.matrix(factors.data[,names.factors %in% names.beta])
+        factors.data <- factors.data[, names.factors %in% names.beta, drop = FALSE]
     }
 
     # define a joint empirical density for the factors and residuals and use
     # that to calculate the returns.
-    .data <- as.matrix(merge(as.matrix(factors.data), resid))
+    # Align index types: resid may have POSIXct from xts::as.xts(); convert
+    # to Date to match factors.data and avoid merge producing duplicate rows.
+    if (inherits(zoo::index(resid), "POSIXct")) {
+      tz <- attr(zoo::index(resid), "tzone")
+      if (is.null(tz) || tz == "") tz <- Sys.timezone()
+      zoo::index(resid) <- as.Date(zoo::index(resid), tz = tz)
+    }
+    .data <- as.matrix(merge(factors.data, resid))
     alpha <- matrix(as.numeric(fit$alpha), nrow=nrow(.data), ncol=1, byrow=TRUE)
 
     returns   <- alpha + .data[,-ncol(.data),drop=FALSE] %*% beta +
