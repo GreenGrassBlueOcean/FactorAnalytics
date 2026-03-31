@@ -86,5 +86,7 @@ test_that("fmCov output works with RiskPortfolios", {
   )
   expect_equal(length(w), nrow(Sigma))
   expect_equal(sum(w), 1, tolerance = 1e-6)
-  expect_true(all(w >= 0))
+  # quadprog can return microscopic negative weights (~-1e-18) for long-only;
+  # use small tolerance to prevent flaky CI.
+  expect_true(all(w >= -1e-8))
 })
