@@ -526,6 +526,77 @@ test_that("repExposures plots without error", {
   }
 })
 
+# ── repExposures: additional coverage ─────────────────────────────────────────
+
+test_that("repExposures rejects non-ffm input", {
+  expect_error(repExposures("not_an_ffm"), "class.*ffm")
+})
+
+test_that("repExposures with named weights reorders correctly", {
+  res <- capture.output(
+    out <- repExposures(fit_ffm_wls, weights = wts145,
+                        isPlot = FALSE, isPrint = TRUE)
+  )
+  expect_true(is.list(out))
+  expect_true("Style.Exposures" %in% names(out))
+})
+
+test_that("repExposures rejects unnamed weights", {
+  unnamed_wts <- rep(1 / length(fit_ffm_wls$asset.names),
+                     length(fit_ffm_wls$asset.names))
+  expect_error(
+    repExposures(fit_ffm_wls, weights = unnamed_wts, isPlot = FALSE),
+    "names of weights"
+  )
+})
+
+test_that("repExposures titleText=FALSE works for which=1 and which=2", {
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  for (w in 1:2) {
+    expect_no_error(
+      repExposures(fit_ffm_wls, isPlot = TRUE, isPrint = FALSE,
+                   which = w, titleText = FALSE)
+    )
+  }
+})
+
+test_that("repExposures multiple which vector works", {
+  # par(ask=TRUE) inside repExposures prompts in interactive sessions
+  skip_if(interactive(), "par(ask=TRUE) prompts interactively")
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  expect_no_error(
+    repExposures(fit_ffm_wls, isPlot = TRUE, isPrint = FALSE, which = c(1, 2))
+  )
+})
+
+test_that("repExposures works on style-only model (no char exposures)", {
+  fit_style <- fitFfm(
+    data = dat145, exposure.vars = c("ROE", "BP"),
+    date.var = "DATE", ret.var = "RETURN", asset.var = "TICKER"
+  )
+  res <- capture.output(
+    out <- repExposures(fit_style, isPlot = FALSE, isPrint = TRUE)
+  )
+  expect_true("Style.Exposures" %in% names(out))
+  expect_equal(nrow(out$Style.Exposures), 2L)
+})
+
+test_that("repExposures which=3 works with single numeric exposure", {
+  fit_single_num <- fitFfm(
+    data = dat145, exposure.vars = c("SECTOR", "ROE"),
+    date.var = "DATE", ret.var = "RETURN", asset.var = "TICKER",
+    addIntercept = TRUE, fit.method = "WLS", z.score = "crossSection"
+  )
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  expect_no_error(
+    repExposures(fit_single_num, isPlot = TRUE, isPrint = FALSE, which = 3)
+  )
+})
+
+
 test_that("repReturn runs without error (computation only)", {
   expect_no_error(
     capture.output(repReturn(fit_ffm_wls, isPlot = FALSE, isPrint = TRUE))
