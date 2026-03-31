@@ -83,7 +83,7 @@
 #' in \code{plot}. Default is 1.
 #' @param lwd set the line width, same as in \code{\link{plot}}. Default is 2.
 #' @param maxlag optional number of lags to be calculated for ACF. Default is 15.
-#' @param asset.variable the name of asset variable.
+
 #' @param ... further arguments to be passed to other plotting functions.
 #' @author Eric Zivot, Sangeetha Srinivasan and Yi-An Chen
 #'
@@ -158,7 +158,7 @@
 #' @export
 
 plot.ffm <- function(x, which=NULL, f.sub=1:2, a.sub=1:6,
-                     plot.single=FALSE, asset.name, asset.variable,
+                     plot.single=FALSE, asset.name,
                      colorset=c("royalblue","dimgray","olivedrab","firebrick",
                                 "goldenrod","mediumorchid","deepskyblue",
                                 "chocolate","darkslategray"),
