@@ -337,3 +337,27 @@ test_that("fitFfm stdReturn=TRUE preserves object structure", {
   n_dates <- length(unique(dat145$DATE)) - 1L  # -1 for lagExposures
   expect_equal(length(fit_std$r2), n_dates)
 })
+
+# --- lagExposures=FALSE: skip exposure lagging (fitFfm.R line 323) ---
+test_that("fitFfm with lagExposures=FALSE uses all dates", {
+  fit_lag <- fitFfm(
+    data = dat145, asset.var = "TICKER", ret.var = "RETURN",
+    date.var = "DATE", exposure.vars = c("SECTOR", "ROE", "BP"),
+    lagExposures = TRUE
+  )
+  fit_nolag <- fitFfm(
+    data = dat145, asset.var = "TICKER", ret.var = "RETURN",
+    date.var = "DATE", exposure.vars = c("SECTOR", "ROE", "BP"),
+    lagExposures = FALSE
+  )
+  expect_s3_class(fit_nolag, "ffm")
+  # Without lagging, all 60 dates are used (vs 59 with lagging)
+  expect_equal(nrow(fit_nolag$factor.returns), nrow(fit_lag$factor.returns) + 1L)
+  # Factor returns should differ (different exposure alignment)
+  expect_false(
+    isTRUE(all.equal(
+      as.matrix(fit_lag$factor.returns),
+      as.matrix(utils::tail(fit_nolag$factor.returns, nrow(fit_lag$factor.returns)))
+    ))
+  )
+})
