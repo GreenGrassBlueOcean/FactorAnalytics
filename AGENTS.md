@@ -73,8 +73,11 @@ architecture reference are in:
   - `test-fitTsfmLagLeadBeta.R` — 24 assertions: fitTsfmLagLeadBeta() lag-only/lag+lead models (LagLeadBeta=1,2), rf.name=NULL, rf.name bug regression, error paths (missing mkt.name, invalid LagLeadBeta), S3 method compatibility (Post-Phase 10)
   - `test-selectCRSPandSPGMI.R` — 15 assertions: selectCRSPandSPGMI() structure/filtering (date range, CapGroup, Sector NA removal), LargeCap+Nstocks params, end-to-end fitFfm pipeline (Post-Phase 10, requires PCRA)
   - `test-coverage-expansion.R` — 109 assertions: fitTsfmMT, summary.tsfm HC/HAC/lars/labels, summary.tsfmUpDn+print, summary.ffm labels=FALSE, predict.tsfm newdata, predict.ffm pred.date+backward compat, fmVaRDecomp/fmEsDecomp type="normal", fmRsq barplot/title/combined, plot.pafm which.plot paths, plot.tsfmUpDn SFM.line+LSandRob (LS+Robust originals)+Robust-only legend, portSdDecomp user factor.cov, exposuresTseries, fitFfm z.score crossSection+rob.stats/timeSeries, fitFfm validation errors (7 branches), repRisk portfolio.only FMCR/FCR + list dispatch, fmmc input validation+parallel (Post-Phase 10)
-- **Total:** 1251 assertions across 31 test files, 0 failures, 3 skips (interactive `par(ask)` test, single-asset ffm not constructible, fmmc parallel requires installed package).
-- **Coverage:** 80.0% (Codecov, commit `84ac63f`). Previously 68.4% at Phase 10 end, 57.8% at Phase 9 commit `526d2c3`. Baseline was 46.4% at commit `4b58a6e`.
+  - `test-coverage-gaps.R` — 93 assertions: repReturn non-ffm/unnamed-weights errors, repReturn MSCI pure+style (2 char exposures) compute+plots (which=1-4), plot.pafm bad-date tryCatch (single+multi), plot.pafm invalid-which invisible() (single+multi), fitTsfm.control all validation error branches (decay/logicals/nvmin/nvmax/lars.criterion + user-args path), fmCov non-class error + NULL factor.cov computation, portVolDecomp error branches (tsfm+ffm × wrong count/unnamed/bad factor.cov dims/non-class), VIF non-class/<2 numeric/title=FALSE/isPrint=FALSE; fmmcSemiParam validation errors (beta/factor mismatch, wrong resid.par cols for normal/skew-t, invalid resid.dist, alpha/beta row mismatch); fmTstats sector+intercept restricted t-stats branch (pure sector + sector+style + plots); repExposures MSCI multi-char compute+plots (which=1-3) + invalid-which invisible() (Post-Phase 10)
+  - `test-plot-coverage.R` — 14 assertions: plot.tsfm Lars method detection + Lars which=4/18/19/group-12 errors, DLS explicit decay which=18, missing asset.name error, invisible() defaults (single+group), <2 assets group error; plot.ffm invisible() defaults (single+group), <2 assets group error (Post-Phase 10)
+- **Total:** 1358 assertions across 33 test files, 0 failures, 3 skips (single-asset ffm not constructible, fmmc parallel requires installed package, R CMD check limits cores).
+- **Coverage:** 91.3% (local). Previously 80.0% at commit `84ac63f`, 68.4% at Phase 10 end, 57.8% at Phase 9 commit `526d2c3`. Baseline was 46.4% at commit `4b58a6e`.
+- **Coverage ceiling:** ~86% for `plot.tsfm.R` and ~85% for `plot.ffm.R` due to interactive `menu()`/`par(ask)` loops (standard R plot pattern, not testable non-interactively). ~80% for `fmmcSemiParam.R` (block bootstrap internals).
 - **Tolerances:** Coefficients/factor returns `1e-10`, covariance `1e-8`, risk decomp `1e-6`.
 - **Setup:** `tests/testthat/setup.R` loads all bundled datasets and prepares the
   `dat145` subset used across multiple test files.
@@ -498,6 +501,61 @@ with `paste0()` throughout the legend code.
   `alt.label`, with correct assignment of `"Beta"`/`"BetaRob"` to original vs
   alternative model betas.
 - Non-LSandRob path now only references `up.beta`/`dn.beta` (always defined).
+
+### `repReturn()` multi-char `exposures.char.name` becomes a list — FIXED
+
+**Severity:** Medium — `repReturn` which=3 (sector returns plot) crashed for any
+MSCI model (2+ character exposures).
+
+`repReturn.R` line 83 did:
+```r
+exposures.char.name <- as.vector(unique(ffmObj$data[,exposures.char]))
+```
+When `exposures.char` has length > 1, `[` returns a data.frame. `unique()` on a
+data.frame deduplicates rows (not values), and `as.vector()` on a data.frame
+produces a list. Downstream `dat[, c('FacRet', exposures.char.name)]` then
+failed with `'list' object cannot be coerced to type 'logical'`.
+
+Worked correctly for single-char models because `[` with drop=TRUE returns a
+vector.
+
+**Fix:** Iterate per-column:
+```r
+exposures.char.name <- unlist(lapply(exposures.char, function(v)
+    as.character(unique(ffmObj$data[[v]]))))
+```
+
+### `repExposures()` multi-char `sect` becomes garbage — FIXED
+
+**Severity:** Medium — `repExposures` which=3 (barchart) crashed for any
+MSCI model (2+ character exposures). Identical pattern to the `repReturn` bug.
+
+`repExposures.R` line 193 did:
+```r
+sect = as.character(unique(dat[,exposures.char]))
+```
+When `exposures.char` has length > 1, `unique()` deduplicates data.frame rows,
+and `as.character()` coerces each column to a string representation of its
+factor levels (e.g., `"c(8, 7, 5, ...)"`) instead of the actual level names.
+Downstream `X[, sect]` then failed with `subscript out of bounds`.
+
+**Fix:** Same per-column iteration:
+```r
+sect = unlist(lapply(exposures.char, function(v)
+    as.character(unique(dat[[v]]))))
+```
+
+### `fmmc()` crashes under R CMD check due to `_R_CHECK_LIMIT_CORES_` — FIXED
+
+**Severity:** Low — only affects CI/CRAN check environments, not user code.
+
+`fmmc()` called `parallel::makeCluster(parallel::detectCores())` at 2 sites.
+R CMD check sets `_R_CHECK_LIMIT_CORES_` to cap parallel resource usage;
+`.check_ncores()` then errors when requesting more than 2 cores.
+
+**Fix:** Added `.fmmc.safe_ncores()` helper that reads `detectCores()` but caps
+to 2 when `_R_CHECK_LIMIT_CORES_` is set. Applied at both `makeCluster` call
+sites in `fmmc()` and `fmmc.estimate.se()`.
 
 ## Performance Optimisations (Phase 2)
 

@@ -746,6 +746,41 @@ working with a simple `as.matrix()` removal alone.
 the attribute is empty) for the `as.Date()` conversion. Same pattern as the
 Phase 9.7 fix in `normalize_fm_residuals` (Section 4.11.2).
 
+#### 4.12.5 `repReturn()` multi-char `exposures.char.name` becomes a list — FIXED
+
+**Severity:** Medium — `repReturn` which=3 (sector returns plot) crashed for any
+MSCI model (2+ character exposures).
+
+**Bug:** `repReturn.R` line 83 did `as.vector(unique(ffmObj$data[, exposures.char]))`.
+When `exposures.char` has length > 1, `[` returns a data.frame, `unique()`
+deduplicates rows, and `as.vector()` produces a list. Downstream column selection
+failed with `'list' object cannot be coerced to type 'logical'`.
+
+**Fix:** `unlist(lapply(exposures.char, function(v) as.character(unique(ffmObj$data[[v]]))))`.
+
+#### 4.12.6 `repExposures()` multi-char `sect` becomes garbage — FIXED
+
+**Severity:** Medium — `repExposures` which=3 (barchart) crashed for any
+MSCI model (2+ character exposures). Identical pattern to 4.12.5.
+
+**Bug:** `repExposures.R` line 193 did `as.character(unique(dat[, exposures.char]))`.
+For multi-char models, `as.character()` on a data.frame coerces each column to a
+string representation of its factor levels (e.g., `"c(8, 7, 5, ...)"`).
+
+**Fix:** `unlist(lapply(exposures.char, function(v) as.character(unique(dat[[v]]))))`.
+
+#### 4.12.7 `fmmc()` crashes under R CMD check due to `_R_CHECK_LIMIT_CORES_` — FIXED
+
+**Severity:** Low — only affects CI/CRAN check environments, not user code.
+
+**Bug:** `fmmc()` called `parallel::makeCluster(parallel::detectCores())` at 2 sites.
+R CMD check sets `_R_CHECK_LIMIT_CORES_` to cap parallel resource usage;
+`.check_ncores()` then errors when requesting more than 2 cores.
+
+**Fix:** Added `.fmmc.safe_ncores()` helper that reads `detectCores()` but caps
+to 2 when `_R_CHECK_LIMIT_CORES_` is set. Applied at both `makeCluster` call
+sites in `fmmc()` and `fmmc.estimate.se()`.
+
 ---
 
 ## 5. S3 Class Hierarchy and Method Dispatch
@@ -1071,7 +1106,13 @@ scale (percentages), not 0–1 (proportions).
 | `test-repRisk.R` | 10 | repRisk baseline smoke (tsfm+ffm), S3 dispatch, 5 bug regressions, decomp×risk structure, plot paths | Behavioural (Phase 10) |
 | `test-fmmc.R` | 15 | `fmmc()`, `fmmc.estimate.se()`, `.fmmc.default.args()`, `fmmcSemiParam()` Normal/CF/skew-t/empirical residuals, block bootstrap, input validation, Cartesian join regression | Smoke + behavioural (Post-Phase 10) |
 | `test-assetDecomp.R` | 9 | `assetDecomp()` Sd/VaR/ES × np/normal, percentage sums-to-100, ES≤VaR ordering (incl. normal ES sign regression), NULL/equal weights, slot-based column access | Smoke + behavioural (Post-Phase 10) |
-| **Total** | **221** | | **913 assertions** |
+| `test-residualizeReturns.R` | 17 | residualizeReturns, standardizeReturns, lagExposures: core logic, flags, immutability, error paths, end-to-end pipeline | Behavioural (Post-Phase 10) |
+| `test-fitTsfmLagLeadBeta.R` | 8 | fitTsfmLagLeadBeta: lag-only/lag+lead models, rf.name bug regression, error paths, S3 compat | Behavioural (Post-Phase 10) |
+| `test-selectCRSPandSPGMI.R` | 6 | selectCRSPandSPGMI: structure/filtering, CapGroup, end-to-end fitFfm pipeline (requires PCRA) | Smoke + behavioural (Post-Phase 10) |
+| `test-coverage-expansion.R` | 52 | fitTsfmMT, summary/predict methods, plot.tsfmUpDn, fmRsq, fmVaR/EsDecomp normal, exposuresTseries, fitFfm validation, repRisk portfolio.only, fmmc parallel | Behavioural (Post-Phase 10) |
+| `test-coverage-gaps.R` | 39 | repReturn/repExposures MSCI multi-char, plot.pafm error paths, fitTsfm.control validation, fmCov/portVolDecomp/VIF error branches, fmmcSemiParam validation, fmTstats sector+intercept branch | Behavioural (Post-Phase 10) |
+| `test-plot-coverage.R` | 14 | plot.tsfm Lars errors/DLS decay/missing asset.name/invisible() defaults; plot.ffm invisible()/group errors | Behavioural (Post-Phase 10) |
+| **Total** | **~370** | | **1358 assertions** |
 
 **Conditional skips (added Phase 1):** Three test blocks skip when optional packages
 are absent:

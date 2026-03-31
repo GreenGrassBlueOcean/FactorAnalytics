@@ -190,7 +190,8 @@ repExposures <- function(ffmObj, weights = NULL, isPlot = TRUE, isPrint = TRUE, 
                  a = 100*colMeans(X[,exposures.num])
                  b = 100*apply(X[,exposures.num],2,sd)
                  c = rbind(a,b)
-                 sect = as.character(unique(dat[,exposures.char]))
+                 sect = unlist(lapply(exposures.char, function(v)
+                     as.character(unique(dat[[v]]))))
                  d = 100*colMeans(X[,sect])
                 if(length(exposures.num)>1)
                 {
