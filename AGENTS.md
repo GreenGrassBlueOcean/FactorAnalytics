@@ -41,7 +41,7 @@ architecture reference are in:
   (values identical, column order changed from `(Market, cat, style)` to
   `(Market, style, cat)` to match `factor.names`).
   Each fixture stores only numeric components (no full `lm`/`ffm` objects).
-- **Test files:** 24 files in `tests/testthat/`:
+- **Test files:** 29 files in `tests/testthat/`:
   - `test-fitFfm.R` — 5 FFM model branches + structure/dimension invariants + Rob standalone + GARCH/RobustEWMA/rob.stats residual scaling + robEWMA alias + print.ffmSpec + rob.stats=TRUE covariance + weight.var z-scores (Coverage Expansion)
   - `test-fitTsfm.R` — 3 TSFM paths + DLS + stepwise + subsets + LARS cv + single-asset + manual `lm()` cross-validation (Coverage Expansion)
   - `test-fmCov.R` — Covariance matrices + identity verification
@@ -69,7 +69,9 @@ architecture reference are in:
   - `test-repRisk.R` — 29 assertions: repRisk baseline smoke (tsfm+ffm), S3 dispatch, bug regressions (5 bugs), decomp×risk structure checks, plot paths (Phase 10)
   - `test-fmmc.R` — 51 assertions: fmmc() structure + Cartesian join regression + fmmc.estimate.se() with/without SE + .fmmc.default.args + fmmcSemiParam() Normal/Cornish-Fisher/skew-t/empirical residuals + block bootstrap + input validation (Post-Phase 10)
   - `test-assetDecomp.R` — 32 assertions: assetDecomp() Sd/VaR/ES × np/normal decomposition, structure checks, percentage-sums-to-100, ES≤VaR ordering (incl. normal ES sign regression), NULL/equal weights, slot-based column access (Post-Phase 10)
-- **Total:** 1019 assertions across 27 test files, 0 failures, 1 skip (interactive-only `par(ask)` test).
+  - `test-residualizeReturns.R` — 28 assertions: residualizeReturns() core functionality (yVar update, flags, column merge, variance reduction), isBenchExcess toggle, immutability, error paths (non-xts, missing colnames), print.ffmSpec conditional messages (residualized/standardized/both), end-to-end fitFfmDT pipeline on residualized specObj (Post-Phase 10)
+  - `test-fitTsfmLagLeadBeta.R` — 24 assertions: fitTsfmLagLeadBeta() lag-only/lag+lead models (LagLeadBeta=1,2), rf.name=NULL, rf.name bug regression, error paths (missing mkt.name, invalid LagLeadBeta), S3 method compatibility (Post-Phase 10)
+- **Total:** 1071 assertions across 29 test files, 0 failures, 1 skip (interactive-only `par(ask)` test).
 - **Coverage:** 80.0% (Codecov, commit `84ac63f`). Previously 68.4% at Phase 10 end, 57.8% at Phase 9 commit `526d2c3`. Baseline was 46.4% at commit `4b58a6e`.
 - **Tolerances:** Coefficients/factor returns `1e-10`, covariance `1e-8`, risk decomp `1e-6`.
 - **Setup:** `tests/testthat/setup.R` loads all bundled datasets and prepares the
@@ -421,6 +423,23 @@ into `dataDT`, omitting `weight.var`. When `standardizeExposures()` later did
 column wasn't in the data.table.
 
 **Fix:** Added `weight.var` to `keep_cols` when non-NULL before subsetting.
+
+### `fitTsfmLagLeadBeta()` `rf.name` overwritten by `mkt.name` — FIXED
+
+**Severity:** Medium — risk-free rate adjustment was always wrong when `rf.name`
+was provided.
+
+`fitTsfmLagLeadBeta.r` line 127 had:
+```r
+rf.name <- make.names(mkt.name)   # BUG: should be make.names(rf.name)
+```
+
+This set `rf.name` to the market factor name, so `fitTsfm()` subtracted the market
+return instead of the risk-free rate from both assets and factors. The resulting
+excess returns and alphas were systematically wrong.
+
+**Fix:** Changed to `rf.name <- if (!is.null(rf.name)) make.names(rf.name) else NULL`,
+also handling the `rf.name = NULL` case correctly.
 
 ## Performance Optimisations (Phase 2)
 
