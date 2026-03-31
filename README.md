@@ -25,7 +25,7 @@ test coverage while preserving full API compatibility.
 
 ### What changed
 
-**Bug fixes (16 pre-existing bugs found and fixed)**
+**Bug fixes (20 pre-existing bugs found and fixed)**
 
 - **`portVaRDecomp()` / `portEsDecomp()` wrong portfolio residual formula**
   (upstream bug). The augmented factor model's residual pseudo-factor was
@@ -48,7 +48,16 @@ test coverage while preserving full API compatibility.
   producing incorrect kernel-weighted marginal VaR/ES estimates
 - Sector+intercept models produced `factor.returns` columns in a different order
   than `factor.names`, requiring a fragile post-hoc reordering step
-- Several more — see [AGENTS.md](AGENTS.md) for the full list
+- `.fmmc.proc()` merged factors and residuals via `merge.data.frame` (Cartesian
+  join) instead of `merge.xts` (time-aligned), producing `T²` rows instead of
+  `T` — all Monte Carlo return distributions were invalid
+- `assetDecomp()` normal ES formula used `+` instead of `-`, returning positive
+  (right-tail) values instead of negative (left-tail) ES
+- `assetDecomp()` hard-coded `"RETURN"` and `"DATE"` column names instead of
+  using the stored slot references, breaking on any non-DJIA dataset
+- `fitTsfm()` converted `POSIXct` dates to `Date` using UTC instead of the
+  source timezone, shifting all tsfm output dates by one day on non-UTC systems
+- See [AGENTS.md](AGENTS.md) for the full list with root cause analysis
 
 **Performance**
 
@@ -79,9 +88,10 @@ Hard imports reduced from 18 to 6 (`data.table`, `lattice`, `methods`,
 
 **Test suite**
 
-782 assertions across 24 test files, 0 failures. Coverage increased from
-~0% to 57.8%. Tests cover model fitting, risk decomposition, performance
-attribution, input validation, unbalanced panels, and MSCI multi-country models.
+913 assertions across 27 test files, 0 failures. Coverage increased from
+~0% to 68%. Tests cover model fitting, risk decomposition, performance
+attribution, input validation, unbalanced panels, MSCI multi-country models,
+Monte Carlo simulation, and asset-level decomposition.
 
 **CI**
 
