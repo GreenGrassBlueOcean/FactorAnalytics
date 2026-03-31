@@ -26,7 +26,7 @@ architecture reference are in:
 | **Phase 9 — S3 Method Consolidation** | ✅ Complete | 4 shared risk helpers (`make_beta_star`, `make_factor_star_cov`, `normalize_fm_residuals`, `make_resid_diag`) in `R/helpers-risk.R`. Integrated into 8 files / 15+ methods. `fmSdDecomp.ffm` NA-zeroing inconsistency fixed. 690 assertions across 23 test files, 0 failures. R CMD check clean. |
 | **Phase 9.6 — riskDecomp Dispatcher** | ✅ Complete | `riskDecomp.R` 762→~200 lines: thin dispatcher to 6 specialized methods. Portfolio residual normalization bug eliminated from `repRisk` path. Orphaned `@importFrom` directives relocated to correct files. 67 dispatch assertions. 757 total assertions across 24 test files, 0 failures. R CMD check clean (0 errors, 0 warnings, 1 note). |
 | **Phase 9.7 — Branch 2/3 Unification** | ✅ Complete | `extractRegressionStats` branches 2 (sector) and 3 (MSCI) unified via 2 helpers (`extract_restricted_returns`, `build_last_period_beta`). ~90 lines → ~10 lines in caller. Branch 2 column ordering fixed (`factor.returns` now matches `factor.names` for all model types). `normalize_fm_residuals` POSIXct→Date timezone bug fixed. 782 assertions across 24 test files, 0 failures, 0 warnings. |
-| **Phase 10 — Risk Reporting Cleanup** | ✅ Complete | 5 repRisk.ffm bugs fixed. 340 lines orphaned `.sfm` dead code removed (4 S3 methods + `paFm` branch). `.tsfm`/`.ffm` decomposition methods deduplicated via `extract_fm_components()` + 3 shared `_impl` functions. `repRisk.R` refactored 760→461 lines via slot-lookup table + `.repRisk_impl()`. Latent `as.Date()` timezone bug fixed in `fmVaRDecomp.ffm`/`fmEsDecomp.ffm`. `missing(factor.cov)` → `NULL` default across 6 S3 methods. 831 assertions across 25 test files, 0 failures. R CMD check clean. |
+| **Phase 10 — Risk Reporting Cleanup** | ✅ Complete | 5 repRisk.ffm bugs fixed. 340 lines orphaned `.sfm` dead code removed (4 S3 methods + `paFm` branch). `.tsfm`/`.ffm` decomposition methods deduplicated via `extract_fm_components()` + 3 shared `_impl` functions. `repRisk.R` refactored 760→461 lines via slot-lookup table + `.repRisk_impl()`. Latent `as.Date()` timezone bug fixed in `fmVaRDecomp.ffm`/`fmEsDecomp.ffm`. `missing(factor.cov)` → `NULL` default across 6 S3 methods. 831 assertions across 25 test files, 0 failures. R CMD check clean. Profiled: `portfolio.only` ~2.5× faster / ~3× less memory than full path (50ms vs 127ms, 6MB vs 19MB). |
 
 ## Test Infrastructure
 
@@ -342,6 +342,22 @@ wall time, with `lm()` × 300 cross-sections accounting for 48%. Within
 data.table j-expressions (15% of total), not xts conversion. See `architecture.md`
 Section 4.7 for the full breakdown. Future performance work should target `lm()` →
 `.lm.fit()` or vectorized `:=` column extraction.
+
+### repRisk `portfolio.only` Performance (Phase 10)
+
+Profiled on `stocks145scores6` (145 assets × 60 months, WLS sector model) with
+`wtsStocks145GmvLo` weights. 20 iterations via `bench::mark()`.
+
+- **Full path** (asset + portfolio, 1 risk): 126.5 ms median, 18.8 MB
+- **`portfolio.only`** (1–3 risks): ~50 ms median, 6.0 MB
+- **Speedup:** ~2.5× faster, ~3× less memory
+
+Asset-level VaR/ES is the bottleneck (130 ms, 16 MB per call); Sd decomposition
+is negligible (<0.2 ms). The `portfolio.only` path avoids the 145-asset loop entirely.
+
+**Known opportunity:** `portfolio.only` always computes all 3 risk types then filters.
+For `risk = "Sd"` only, this wastes ~50 ms on unnecessary VaR/ES.
+See `architecture.md` Section 4.7.1 for full breakdown.
 
 ## R Package Standards
 

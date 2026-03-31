@@ -506,6 +506,50 @@ via `Rprof()` at 5ms sampling interval.
 warranted, the priority targets are `lm()` → `.lm.fit()` (48% of wall time) and
 `data.frame()` → vectorized `:=` in j-expressions (15% of wall time).
 
+### 4.7.1 repRisk Performance Profile (Phase 10)
+
+Profiled on `stocks145scores6` (145 assets × 60 months, WLS sector model) with
+`wtsStocks145GmvLo` equal-weight portfolio. `bench::mark()` (20 iterations);
+internal breakdown via `Rprof()` at 5ms sampling interval.
+
+#### `repRisk()` end-to-end
+
+| Call | Median | Mem alloc | Notes |
+|---|---|---|---|
+| Full (asset + portfolio, 1 risk) | 126.5 ms | 18.8 MB | asset-level VaR/ES dominates |
+| `portfolio.only` (1 risk) | 51.6 ms | 6.0 MB | |
+| `portfolio.only` (2 risks: VaR + ES) | 48.5 ms | 6.0 MB | |
+| `portfolio.only` (all 3 risks) | 49.5 ms | 6.0 MB | identical — always computes all 3 |
+
+**Speedup:** `portfolio.only` is **~2.5× faster** and **~3× less memory** than the
+full asset + portfolio path.
+
+#### `riskDecomp()` breakdown (single call)
+
+| Decomposition | Median | Mem alloc |
+|---|---|---|
+| `portSd` | 0.15 ms | 0.2 MB |
+| `portVaR` | 27.9 ms | 2.9 MB |
+| `portES` | 31.1 ms | 2.9 MB |
+| `assetSd` | 0.15 ms | 0.2 MB |
+| `assetVaR` | 130.8 ms | 16.2 MB |
+| `assetES` | 121.7 ms | 15.7 MB |
+
+#### Key findings
+
+1. **Sd decomposition is effectively free** (<0.2 ms) for both portfolio and
+   asset-level paths — it is a closed-form matrix operation.
+
+2. **Asset-level VaR/ES is the dominant cost.** The per-asset non-parametric
+   quantile loop (`.fmEsDecomp_impl`) accounts for 79% of full-path wall time.
+   `merge.xts` + `which` (xts index operations inside per-asset ES) account for
+   33%. The `portfolio.only` path avoids the 145-asset loop entirely.
+
+3. **`portfolio.only` always computes all 3 risk types** (lines 258–261 of
+   `repRisk.R`), then filters to the requested subset. For `risk = "Sd"` only,
+   this wastes ~50 ms on unnecessary VaR/ES computation. A future optimization
+   would compute only the requested risk types.
+
 ### 4.8 Monte Carlo Subsystem (Isolated)
 
 ```
