@@ -399,7 +399,7 @@ plot.ffm <- function(x, which=NULL, f.sub=1:2, a.sub=1:6,
                for (i in a.sub) {
                  asset <- x$asset.names[i]
                  fitted.ret <- fitted(x)[,asset]
-                 asset.ret <- subset(x$data, get(asset.variable)==asset)[,c(x$date.var,x$ret.var)]
+                 asset.ret <- subset(x$data, get(x$asset.var)==asset)[,c(x$date.var,x$ret.var)]
                  asset.ret.xts <- xts::as.xts(asset.ret[,2], order.by=zoo::index(fitted.ret))
                  plotData <- merge.xts(asset.ret.xts, fitted.ret)
                  colnames(plotData) <- c("Actual","Fitted")

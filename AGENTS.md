@@ -50,7 +50,7 @@ architecture reference are in:
   - `test-fmRsq.R` — R-squared computation
   - `test-fmTstats.R` — T-statistics computation + all 4 plot types + isPrint + style-only Branch 2 + title=FALSE (Coverage Expansion)
   - `test-input-validation.R` — Error handling, weight validation, column-existence checks (Phase 5)
-  - `test-smoke-methods.R` — 148 smoke tests for S3 methods, plots, reporting. Expanded: plot.tsfm plots 12/15-17/19, DLS/Robust rolling, character f.sub/a.sub, corrplot; plot.ffm character a.sub/f.sub, corrplot, single-asset error; repReturn named weights, titleText=FALSE; repExposures named/unnamed weights, non-ffm error, titleText=FALSE, style-only model, single-numeric which=3, multi-which (Coverage Expansion)
+  - `test-smoke-methods.R` — 161 smoke tests for S3 methods, plots, reporting. Expanded: plot.tsfm plots 12/15-17/19, DLS/Robust rolling, character f.sub/a.sub, corrplot, single-asset auto-inference, group which=3 small a.sub, group which=12 ≥5 assets, CUSUM non-LS errors, multi-factor which=19/12 errors, bad a.sub/f.sub errors; plot.ffm character a.sub/f.sub, corrplot, single-asset error, group which=3 small a.sub, single-factor f.sub auto-set, bad a.sub/f.sub errors; repReturn named weights, titleText=FALSE; repExposures named/unnamed weights, non-ffm error, titleText=FALSE, style-only model, single-numeric which=3, multi-which (Coverage Expansion)
   - `test-vectorize.R` — 15 assertions: EWMA/GARCH vectorization, Robust EWMA, stripped `lm` (Phase 2)
   - `test-unbalanced-panel.R` — 26 assertions: synthetic unbalanced panel (Phase 4.1)
   - `test-fmCov-invariants.R` — ~60 assertions: 6 invariants × 8 model configs (Phase 4.2)
@@ -71,7 +71,7 @@ architecture reference are in:
   - `test-assetDecomp.R` — 32 assertions: assetDecomp() Sd/VaR/ES × np/normal decomposition, structure checks, percentage-sums-to-100, ES≤VaR ordering (incl. normal ES sign regression), NULL/equal weights, slot-based column access (Post-Phase 10)
   - `test-residualizeReturns.R` — 46 assertions: residualizeReturns() core functionality (yVar update, flags, column merge, variance reduction), isBenchExcess toggle, immutability, error paths (non-xts, missing colnames), print.ffmSpec conditional messages (residualized/standardized/both), end-to-end fitFfmDT pipeline on residualized specObj; standardizeReturns() GARCH(1,1) output structure, ret/sigma identity, manual recursion verification, positivity, custom params, immutability, end-to-end pipeline; lagExposures() shift verification (numeric + character), first-period drop, flag/key/idx preservation, immutability (Post-Phase 10)
   - `test-fitTsfmLagLeadBeta.R` — 24 assertions: fitTsfmLagLeadBeta() lag-only/lag+lead models (LagLeadBeta=1,2), rf.name=NULL, rf.name bug regression, error paths (missing mkt.name, invalid LagLeadBeta), S3 method compatibility (Post-Phase 10)
-- **Total:** 1109 assertions across 29 test files, 0 failures, 1 skip (interactive-only `par(ask)` test).
+- **Total:** 1127 assertions across 29 test files, 0 failures, 2 skips (interactive `par(ask)` test, single-asset ffm not constructible).
 - **Coverage:** 80.0% (Codecov, commit `84ac63f`). Previously 68.4% at Phase 10 end, 57.8% at Phase 9 commit `526d2c3`. Baseline was 46.4% at commit `4b58a6e`.
 - **Tolerances:** Coefficients/factor returns `1e-10`, covariance `1e-8`, risk decomp `1e-6`.
 - **Setup:** `tests/testthat/setup.R` loads all bundled datasets and prepares the
@@ -423,6 +423,17 @@ into `dataDT`, omitting `weight.var`. When `standardizeExposures()` later did
 column wasn't in the data.table.
 
 **Fix:** Added `weight.var` to `keep_cols` when non-NULL before subsetting.
+
+### `plot.ffm()` group which=3 undefined `asset.variable` — FIXED
+
+**Severity:** Medium — group "Actual and Fitted" plot was completely broken.
+
+`plot.ffm.R` line 402 used `get(asset.variable)` where `asset.variable` is a
+function parameter with no default value. It should be `x$asset.var` (a slot on
+the ffm object). Any call to `plot(ffm_obj, which = 3)` failed with
+`"argument 'asset.variable' is missing, with no default"`.
+
+**Fix:** Changed `get(asset.variable)` → `get(x$asset.var)`.
 
 ### `fitFfm()` `stdReturn=TRUE` was a no-op — FIXED
 

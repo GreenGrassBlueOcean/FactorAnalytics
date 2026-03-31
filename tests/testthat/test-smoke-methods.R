@@ -664,3 +664,166 @@ test_that("repRisk.tsfm plots without error", {
     suppressWarnings(repRisk(fit_tsfm_ls, isPrint = FALSE, isPlot = TRUE))
   )
 })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# plot.tsfm / plot.ffm coverage expansion — individual & group plot gaps
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── plot.tsfm: single-asset auto-inference (line 182) ──
+test_that("plot.tsfm infers asset.name for single-asset fit", {
+  fit_single <- fitTsfm(
+    asset.names = colnames(managers)[1],
+    factor.names = colnames(managers)[7:8],
+    rf.name = colnames(managers)[10],
+    data = managers
+  )
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  # plot.single=TRUE without specifying asset.name — should auto-infer
+  expect_no_error(
+    plot(fit_single, plot.single = TRUE, which = 1)
+  )
+})
+
+# ── plot.tsfm: group which=3, small a.sub (line 492) ──
+test_that("plot.tsfm group which=3 works with small a.sub", {
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  # 3 assets (< 5) → single-column mfrow layout (line 492)
+  expect_no_error(
+    plot(fit_tsfm_ls, which = 3, a.sub = 1:3)
+  )
+})
+
+# ── plot.tsfm: group which=12, >=5 assets (line 578) ──
+test_that("plot.tsfm group which=12 with >=5 assets uses 2-col layout", {
+  fit_1f <- fitTsfm(
+    asset.names = colnames(managers)[1:6],
+    factor.names = colnames(managers)[7],
+    rf.name = colnames(managers)[10],
+    data = managers
+  )
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  # 6 assets (>= 5) → 2-column mfrow layout (line 578)
+  expect_no_error(
+    plot(fit_1f, which = 12, a.sub = 1:6, f.sub = 1)
+  )
+})
+
+# ── plot.tsfm: CUSUM non-LS error (lines 347, 355, 363) ──
+test_that("plot.tsfm CUSUM plots error for non-LS fit.method", {
+  fit_dls <- fitTsfm(
+    asset.names = colnames(managers)[1:2],
+    factor.names = colnames(managers)[7],
+    rf.name = colnames(managers)[10],
+    data = managers,
+    fit.method = "DLS"
+  )
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  expect_error(
+    plot(fit_dls, plot.single = TRUE, asset.name = fit_dls$asset.names[1], which = 15),
+    "CUSUM.*LS"
+  )
+  expect_error(
+    plot(fit_dls, plot.single = TRUE, asset.name = fit_dls$asset.names[1], which = 16),
+    "CUSUM.*LS"
+  )
+  expect_error(
+    plot(fit_dls, plot.single = TRUE, asset.name = fit_dls$asset.names[1], which = 17),
+    "CUSUM.*LS"
+  )
+})
+
+# ── plot.tsfm: which=19 multi-factor error (line 407) ──
+test_that("plot.tsfm individual which=19 errors for multi-factor model", {
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  # fit_tsfm_ls has 3 factors — which=19 requires single factor
+  expect_error(
+    plot(fit_tsfm_ls, plot.single = TRUE,
+         asset.name = fit_tsfm_ls$asset.names[1], which = 19),
+    "single factor"
+  )
+})
+
+# ── plot.tsfm: group which=12 multi-factor error (line 573) ──
+test_that("plot.tsfm group which=12 errors for multi-factor model", {
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  expect_error(
+    plot(fit_tsfm_ls, which = 12, a.sub = 1:3),
+    "single factor"
+  )
+})
+
+# ── plot.tsfm: group bad a.sub error (line 437) ──
+test_that("plot.tsfm group errors on invalid a.sub", {
+  expect_error(
+    plot(fit_tsfm_ls, which = 1, a.sub = c("NONEXIST1", "NONEXIST2")),
+    "a.sub"
+  )
+})
+
+# ── plot.tsfm: group bad f.sub error (line 441) ──
+test_that("plot.tsfm group errors on invalid f.sub", {
+  expect_error(
+    plot(fit_tsfm_ls, which = 2, f.sub = c("NONEXIST")),
+    "f.sub"
+  )
+})
+
+# ── plot.ffm: single-asset auto-inference (line 178) ──
+test_that("plot.ffm infers asset.name for single-asset fit", {
+  # Create minimal single-asset data: pick one ticker with all dates
+  one_ticker <- factorDataSetDjia5Yrs[factorDataSetDjia5Yrs$TICKER == "AA", ]
+  # Need >= 2 assets for specFfm, but for plot.single the ffm just needs 1
+  # Actually fitFfm requires >=2 assets. Use a 2-asset fit but test plot.single
+  # inference on the model. Line 178 fires when length(asset.names)==1.
+  # We can't easily create a 1-asset ffm. Skip this and target other lines.
+  skip("fitFfm requires >=2 assets; single-asset ffm not constructible")
+})
+
+# ── plot.ffm: group which=3, small a.sub (line 395) ──
+test_that("plot.ffm group which=3 works with small a.sub", {
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  # 3 assets (< 5) → single-column mfrow layout (line 395)
+  expect_no_error(
+    plot(fit_ffm_sector, which = 3, a.sub = 1:3)
+  )
+})
+
+# ── plot.ffm: single-factor model auto f.sub (line 340) ──
+test_that("plot.ffm auto-sets f.sub=1 for single-factor model", {
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  # fit_ffm_style has 2 numeric factors (P2B, EV2S) but no intercept →
+  # beta has 2 columns. We need ncol(beta)==1. A style-only with 1 exposure:
+  fit_1exp <- fitFfm(
+    data = factorDataSetDjia5Yrs,
+    asset.var = "TICKER", ret.var = "RETURN", date.var = "DATE",
+    exposure.vars = "P2B"
+  )
+  expect_no_error(
+    plot(fit_1exp, which = 1, a.sub = 1:6)
+  )
+})
+
+# ── plot.ffm: group bad a.sub error (line 336) ──
+test_that("plot.ffm group errors on invalid a.sub", {
+  expect_error(
+    plot(fit_ffm_sector, which = 1, a.sub = c("NONEXIST1", "NONEXIST2")),
+    "a.sub"
+  )
+})
+
+# ── plot.ffm: group bad f.sub error (line 343) ──
+test_that("plot.ffm group errors on invalid f.sub", {
+  expect_error(
+    plot(fit_ffm_sector, which = 1, f.sub = c("NONEXIST")),
+    "f.sub"
+  )
+})
