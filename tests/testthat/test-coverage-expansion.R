@@ -531,3 +531,211 @@ test_that("expand_newdata_ffm handles missing char_levels gracefully", {
   )
   expect_true(is.data.frame(result))
 })
+
+# ============================================================================
+# 14. fitFfm zScore branches (fitFfm.R lines 354-379)
+# ============================================================================
+
+test_that("fitFfm z.score='crossSection' with rob.stats=TRUE uses robust z-scores", {
+  fit_cs_rob <- fitFfm(
+    data = factorDataSetDjia5Yrs,
+    asset.var = "TICKER", ret.var = "RETURN", date.var = "DATE",
+    exposure.vars = c("P2B", "MKTCAP"),
+    z.score = "crossSection", rob.stats = TRUE
+  )
+  expect_s3_class(fit_cs_rob, "ffm")
+  expect_equal(nrow(fit_cs_rob$beta), length(fit_cs_rob$asset.names))
+  expect_true(all(c("P2B", "MKTCAP") %in% colnames(fit_cs_rob$beta)))
+})
+
+test_that("fitFfm z.score='timeSeries' produces valid model", {
+  fit_ts <- fitFfm(
+    data = factorDataSetDjia5Yrs,
+    asset.var = "TICKER", ret.var = "RETURN", date.var = "DATE",
+    exposure.vars = c("P2B", "MKTCAP"),
+    z.score = "timeSeries"
+  )
+  expect_s3_class(fit_ts, "ffm")
+  expect_equal(nrow(fit_ts$beta), length(fit_ts$asset.names))
+})
+
+# ============================================================================
+# 15. fitFfm validation error branches (fitFfm.R lines 250-292, 314, 319)
+# ============================================================================
+
+test_that("fitFfm errors on < 2 assets", {
+  dat_1asset <- factorDataSetDjia5Yrs[factorDataSetDjia5Yrs$TICKER == "AA", ]
+  expect_error(
+    fitFfm(data = dat_1asset, asset.var = "TICKER", ret.var = "RETURN",
+           date.var = "DATE", exposure.vars = "P2B"),
+    "at least 2 assets"
+  )
+})
+
+test_that("fitFfm errors on non-logical full.resid.cov", {
+  expect_error(
+    fitFfm(data = factorDataSetDjia5Yrs, asset.var = "TICKER",
+           ret.var = "RETURN", date.var = "DATE",
+           exposure.vars = "P2B", full.resid.cov = "yes"),
+    "full.resid.cov"
+  )
+})
+
+test_that("fitFfm errors on resid.scaleType with LS", {
+  expect_error(
+    fitFfm(data = factorDataSetDjia5Yrs, asset.var = "TICKER",
+           ret.var = "RETURN", date.var = "DATE",
+           exposure.vars = "P2B", fit.method = "LS",
+           resid.scaleType = "EWMA"),
+    "WLS or W-Rob"
+  )
+})
+
+test_that("fitFfm errors on non-list GARCH.params", {
+  expect_error(
+    fitFfm(data = factorDataSetDjia5Yrs, asset.var = "TICKER",
+           ret.var = "RETURN", date.var = "DATE",
+           exposure.vars = "P2B", GARCH.params = "bad"),
+    "GARCH.params"
+  )
+})
+
+test_that("fitFfm errors on non-logical stdReturn", {
+  expect_error(
+    fitFfm(data = factorDataSetDjia5Yrs, asset.var = "TICKER",
+           ret.var = "RETURN", date.var = "DATE",
+           exposure.vars = "P2B", stdReturn = "yes"),
+    "stdReturn"
+  )
+})
+
+test_that("fitFfm errors on invalid z.score", {
+  expect_error(
+    fitFfm(data = factorDataSetDjia5Yrs, asset.var = "TICKER",
+           ret.var = "RETURN", date.var = "DATE",
+           exposure.vars = "P2B", z.score = "badValue"),
+    "z.score"
+  )
+})
+
+test_that("fitFfm errors on < 2 time periods", {
+  dat_1period <- factorDataSetDjia5Yrs[factorDataSetDjia5Yrs$DATE ==
+    min(factorDataSetDjia5Yrs$DATE), ]
+  expect_error(
+    fitFfm(data = dat_1period, asset.var = "TICKER", ret.var = "RETURN",
+           date.var = "DATE", exposure.vars = "P2B"),
+    "at least 2 unique time periods"
+  )
+})
+
+# ============================================================================
+# 16. repRisk portfolio.only with FMCR and FCR decompositions
+#     (repRisk.R lines 305-319 in .assemble_portfolio_only)
+# ============================================================================
+
+test_that("repRisk portfolio.only with decomp='FMCR' returns marginal contributions", {
+  wts <- rep(1/length(fit_ffm_style$asset.names),
+             length(fit_ffm_style$asset.names))
+  names(wts) <- fit_ffm_style$asset.names
+
+  out <- repRisk(fit_ffm_style, weights = wts,
+                 risk = c("Sd", "VaR", "ES"), decomp = "FMCR",
+                 portfolio.only = TRUE, isPrint = FALSE, isPlot = FALSE)
+  expect_true(is.list(out))
+  d <- out$decomp
+  expect_true(is.matrix(d))
+  expect_equal(nrow(d), 3L)
+  expect_equal(sort(rownames(d)), c("ES", "Sd", "VaR"))
+  # FMCR has no RM/Total column — just factor + residual marginals
+  expect_true("Residuals" %in% colnames(d))
+})
+
+test_that("repRisk portfolio.only with decomp='FCR' includes RM column", {
+  wts <- rep(1/length(fit_ffm_style$asset.names),
+             length(fit_ffm_style$asset.names))
+  names(wts) <- fit_ffm_style$asset.names
+
+  out <- repRisk(fit_ffm_style, weights = wts,
+                 risk = c("Sd", "VaR", "ES"), decomp = "FCR",
+                 portfolio.only = TRUE, isPrint = FALSE, isPlot = FALSE)
+  d <- out$decomp
+  expect_true(is.matrix(d))
+  expect_equal(nrow(d), 3L)
+  expect_true("RM" %in% colnames(d))
+})
+
+test_that("repRisk portfolio.only single risk with FMCR", {
+  wts <- rep(1/length(fit_ffm_style$asset.names),
+             length(fit_ffm_style$asset.names))
+  names(wts) <- fit_ffm_style$asset.names
+
+  out <- repRisk(fit_ffm_style, weights = wts,
+                 risk = "VaR", decomp = "FMCR",
+                 portfolio.only = TRUE, isPrint = FALSE, isPlot = FALSE)
+  d <- out$decomp
+  expect_true(is.matrix(d))
+  expect_equal(nrow(d), 1L)
+  expect_equal(rownames(d), "VaR")
+})
+
+# ============================================================================
+# 17. repRisk list-of-objects dispatch (repRisk.R lines 125-129, 186)
+# ============================================================================
+
+test_that("repRisk accepts list of ffm objects", {
+  wts <- rep(1/length(fit_ffm_style$asset.names),
+             length(fit_ffm_style$asset.names))
+  names(wts) <- fit_ffm_style$asset.names
+
+  out <- repRisk(list(fit_ffm_style, fit_ffm_style),
+                 weights = list(wts, wts),
+                 risk = "Sd", decomp = "FPCR",
+                 isPrint = FALSE, isPlot = FALSE)
+  expect_true(is.list(out))
+})
+
+test_that("repRisk list dispatch errors on non-fm objects", {
+  expect_error(
+    repRisk(list("not_a_model"), weights = list(c(a = 1))),
+    "tsfm.*ffm"
+  )
+})
+
+# ============================================================================
+# 18. fmmc edge cases (fmmc.R lines 62-63, 69-70, 106-110, 287-294)
+# ============================================================================
+
+test_that(".fmmc.proc warns on non-matrix inputs", {
+  expect_warning(
+    result <- FactorAnalytics:::.fmmc.proc(R = 1:10, factors = 1:10),
+    "not matrix"
+  )
+  expect_true(is.na(result))
+})
+
+test_that(".fmmc.proc warns when factors shorter than assets", {
+  R <- xts::xts(matrix(rnorm(20), ncol = 1), order.by = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 20))
+  colnames(R) <- "Asset1"
+  fac <- xts::xts(matrix(rnorm(10), ncol = 1), order.by = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 10))
+  colnames(fac) <- "Factor1"
+  expect_warning(
+    result <- FactorAnalytics:::.fmmc.proc(R = R, factors = fac),
+    "Length of factors"
+  )
+  expect_true(is.na(result))
+})
+
+test_that("fmmc parallel=TRUE produces same structure as sequential", {
+  # parallel path calls clusterEvalQ(cl, library(FactorAnalytics)) which
+  # requires the package to be installed, not just source-loaded via load_all.
+  # Detect load_all: system.file() returns path ending in /inst for source packages.
+  pkg_path <- system.file(package = "FactorAnalytics")
+  skip_if(grepl("/inst$", pkg_path),
+          "FactorAnalytics loaded via devtools, not installed")
+  R <- managers[, 1:2]
+  factors <- managers[, c("EDHEC.LS.EQ", "SP500.TR")]
+
+  result_seq <- fmmc(R, factors, parallel = FALSE)
+  result_par <- fmmc(R, factors, parallel = TRUE)
+  expect_equal(length(result_seq), length(result_par))
+})
