@@ -732,6 +732,10 @@ test_that("fmmc parallel=TRUE produces same structure as sequential", {
   pkg_path <- system.file(package = "FactorAnalytics")
   skip_if(grepl("/inst$", pkg_path),
           "FactorAnalytics loaded via devtools, not installed")
+  # R CMD check sets _R_CHECK_LIMIT_CORES_ which makes makeCluster() error
+  # when requesting more than 2 cores (detectCores() on CI typically returns 4).
+  skip_if(nzchar(Sys.getenv("_R_CHECK_LIMIT_CORES_")),
+          "R CMD check limits parallel cores")
   R <- managers[, 1:2]
   factors <- managers[, c("EDHEC.LS.EQ", "SP500.TR")]
 

@@ -10,6 +10,16 @@
 #' @param  ... Arguments that must be passed to fitTsfm
 #'
 #'
+# Respect _R_CHECK_LIMIT_CORES_ set by R CMD check to avoid spawning
+# too many processes on CI/CRAN build machines.
+.fmmc.safe_ncores <- function() {
+  ncores <- parallel::detectCores()
+  if (nzchar(Sys.getenv("_R_CHECK_LIMIT_CORES_"))) {
+    ncores <- min(ncores, 2L)
+  }
+  ncores
+}
+
 .fmmc.default.args <- function(...) {
     add.args <- list(...)
     if(!"fit.method" %in% names(add.args)) add.args[["fit.method"]] <- "LS"
@@ -284,7 +294,7 @@ fmmc <- function(R, factors, parallel=FALSE, ...) {
   assets.count <- ncol(R)
 
   if (parallel) {
-    cl <- parallel::makeCluster(parallel::detectCores())
+    cl <- parallel::makeCluster(.fmmc.safe_ncores())
     on.exit(parallel::stopCluster(cl), add = TRUE)
     parallel::clusterExport(cl,
       varlist = c(".fmmc.worker", ".fmmc.proc", ".fmmc.default.args"),
@@ -335,7 +345,7 @@ fmmc.estimate.se <- function(fmmcObjs, fun=NULL, se=FALSE, nboot=100,
 
     cl <- NULL
     if(parallel) {
-        cl <- parallel::makeCluster(parallel::detectCores())
+        cl <- parallel::makeCluster(.fmmc.safe_ncores())
         on.exit(parallel::stopCluster(cl), add = TRUE)
         parallel::clusterEvalQ(cl, library(xts))
     }

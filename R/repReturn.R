@@ -80,7 +80,8 @@ repReturn <- function(ffmObj, weights = NULL, isPlot = TRUE, isPrint = TRUE, lay
   which.numeric <- sapply(ffmObj$data[,ffmObj$exposure.vars,drop=FALSE], is.numeric)
   exposures.num <- ffmObj$exposure.vars[which.numeric]
   exposures.char <- ffmObj$exposure.vars[!which.numeric]
-  exposures.char.name <- as.vector(unique(ffmObj$data[,exposures.char]))
+  exposures.char.name <- unlist(lapply(exposures.char, function(v)
+    as.character(unique(ffmObj$data[[v]]))))
   
   # get factor model returns from 
   facRet = ffmObj$factor.returns
