@@ -50,7 +50,7 @@ architecture reference are in:
   - `test-fmRsq.R` — R-squared computation
   - `test-fmTstats.R` — T-statistics computation + all 4 plot types + isPrint + style-only Branch 2 + title=FALSE (Coverage Expansion)
   - `test-input-validation.R` — Error handling, weight validation, column-existence checks (Phase 5)
-  - `test-smoke-methods.R` — 138 smoke tests for S3 methods, plots, reporting. Expanded: plot.tsfm plots 12/15-17/19, DLS/Robust rolling, character f.sub/a.sub, corrplot; plot.ffm character a.sub/f.sub, corrplot, single-asset error; repReturn named weights, titleText=FALSE (Coverage Expansion)
+  - `test-smoke-methods.R` — 148 smoke tests for S3 methods, plots, reporting. Expanded: plot.tsfm plots 12/15-17/19, DLS/Robust rolling, character f.sub/a.sub, corrplot; plot.ffm character a.sub/f.sub, corrplot, single-asset error; repReturn named weights, titleText=FALSE; repExposures named/unnamed weights, non-ffm error, titleText=FALSE, style-only model, single-numeric which=3, multi-which (Coverage Expansion)
   - `test-vectorize.R` — 15 assertions: EWMA/GARCH vectorization, Robust EWMA, stripped `lm` (Phase 2)
   - `test-unbalanced-panel.R` — 26 assertions: synthetic unbalanced panel (Phase 4.1)
   - `test-fmCov-invariants.R` — ~60 assertions: 6 invariants × 8 model configs (Phase 4.2)
@@ -69,8 +69,8 @@ architecture reference are in:
   - `test-repRisk.R` — 29 assertions: repRisk baseline smoke (tsfm+ffm), S3 dispatch, bug regressions (5 bugs), decomp×risk structure checks, plot paths (Phase 10)
   - `test-fmmc.R` — 51 assertions: fmmc() structure + Cartesian join regression + fmmc.estimate.se() with/without SE + .fmmc.default.args + fmmcSemiParam() Normal/Cornish-Fisher/skew-t/empirical residuals + block bootstrap + input validation (Post-Phase 10)
   - `test-assetDecomp.R` — 32 assertions: assetDecomp() Sd/VaR/ES × np/normal decomposition, structure checks, percentage-sums-to-100, ES≤VaR ordering (incl. normal ES sign regression), NULL/equal weights, slot-based column access (Post-Phase 10)
-- **Total:** 993 assertions across 27 test files, 0 failures, 0 skips.
-- **Coverage:** 68.4% → TBD after push (Codecov). Previously 57.8% at Phase 9 commit `526d2c3`. Baseline was 46.4% at commit `4b58a6e`.
+- **Total:** 1003 assertions across 27 test files, 0 failures, 1 skip (interactive-only `par(ask)` test).
+- **Coverage:** 80.0% (Codecov, commit `84ac63f`). Previously 68.4% at Phase 10 end, 57.8% at Phase 9 commit `526d2c3`. Baseline was 46.4% at commit `4b58a6e`.
 - **Tolerances:** Coefficients/factor returns `1e-10`, covariance `1e-8`, risk decomp `1e-6`.
 - **Setup:** `tests/testthat/setup.R` loads all bundled datasets and prepares the
   `dat145` subset used across multiple test files.
