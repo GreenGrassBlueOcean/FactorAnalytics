@@ -42,7 +42,7 @@ architecture reference are in:
   `(Market, style, cat)` to match `factor.names`).
   Each fixture stores only numeric components (no full `lm`/`ffm` objects).
 - **Test files:** 24 files in `tests/testthat/`:
-  - `test-fitFfm.R` — 5 FFM model branches + structure/dimension invariants + Rob standalone + GARCH/RobustEWMA/rob.stats residual scaling + robEWMA alias (Coverage Expansion)
+  - `test-fitFfm.R` — 5 FFM model branches + structure/dimension invariants + Rob standalone + GARCH/RobustEWMA/rob.stats residual scaling + robEWMA alias + print.ffmSpec + rob.stats=TRUE covariance + weight.var z-scores (Coverage Expansion)
   - `test-fitTsfm.R` — 3 TSFM paths + DLS + stepwise + subsets + LARS cv + single-asset + manual `lm()` cross-validation (Coverage Expansion)
   - `test-fmCov.R` — Covariance matrices + identity verification
   - `test-riskDecomp.R` — fmSdDecomp, fmVaRDecomp, fmEsDecomp
@@ -69,7 +69,7 @@ architecture reference are in:
   - `test-repRisk.R` — 29 assertions: repRisk baseline smoke (tsfm+ffm), S3 dispatch, bug regressions (5 bugs), decomp×risk structure checks, plot paths (Phase 10)
   - `test-fmmc.R` — 51 assertions: fmmc() structure + Cartesian join regression + fmmc.estimate.se() with/without SE + .fmmc.default.args + fmmcSemiParam() Normal/Cornish-Fisher/skew-t/empirical residuals + block bootstrap + input validation (Post-Phase 10)
   - `test-assetDecomp.R` — 32 assertions: assetDecomp() Sd/VaR/ES × np/normal decomposition, structure checks, percentage-sums-to-100, ES≤VaR ordering (incl. normal ES sign regression), NULL/equal weights, slot-based column access (Post-Phase 10)
-- **Total:** 1003 assertions across 27 test files, 0 failures, 1 skip (interactive-only `par(ask)` test).
+- **Total:** 1019 assertions across 27 test files, 0 failures, 1 skip (interactive-only `par(ask)` test).
 - **Coverage:** 80.0% (Codecov, commit `84ac63f`). Previously 68.4% at Phase 10 end, 57.8% at Phase 9 commit `526d2c3`. Baseline was 46.4% at commit `4b58a6e`.
 - **Tolerances:** Coefficients/factor returns `1e-10`, covariance `1e-8`, risk decomp `1e-6`.
 - **Setup:** `tests/testthat/setup.R` loads all bundled datasets and prepares the
@@ -410,6 +410,17 @@ subset). The bug was latent because all tests used numeric indices.
 
 **Fix:** Changed `f.sub <-` to `a.sub <-` and `==` to `%in%` (to support vector input)
 in both files.
+
+### `specFfm()` drops `weight.var` column from `dataDT` — FIXED
+
+**Severity:** Medium — `weight.var` functionality was completely broken.
+
+`specFfm()` line 317 selected only `c(date.var, asset.var, ret.var, exposure.vars)`
+into `dataDT`, omitting `weight.var`. When `standardizeExposures()` later did
+`dataDT[, w := get(weight.var)]`, it failed with "object not found" because the
+column wasn't in the data.table.
+
+**Fix:** Added `weight.var` to `keep_cols` when non-NULL before subsetting.
 
 ## Performance Optimisations (Phase 2)
 
