@@ -38,6 +38,7 @@ Suggests:
     leaps,
     lmtest,
     parallel,
+    PCRA,
     R.rsp,
     RobStatTM,
     robustbase,
