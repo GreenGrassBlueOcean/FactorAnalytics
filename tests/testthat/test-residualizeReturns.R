@@ -123,7 +123,6 @@ test_that("print.ffmSpec shows 'residualized but not standardized'", {
 })
 
 test_that("print.ffmSpec shows 'standardized but not residualized'", {
-  skip_if_not_installed("rugarch")
   std <- standardizeReturns(spec_for_resid)
   out <- capture.output(print(std))
   expect_true(any(grepl("standardized but not residualized", out)))
@@ -131,7 +130,6 @@ test_that("print.ffmSpec shows 'standardized but not residualized'", {
 })
 
 test_that("print.ffmSpec shows 'residualized and standardized'", {
-  skip_if_not_installed("rugarch")
   res <- residualizeReturns(spec_for_resid, benchmark_xts, rfRate_xts)
   both <- standardizeReturns(res)
   out <- capture.output(print(both))
@@ -152,4 +150,97 @@ test_that("fitFfmDT + extractRegressionStats works on residualized specObj", {
   expect_true(all(!is.na(result$r2)))
   # yVar should reflect residualized returns
   expect_equal(res$yVar, "ResidualizedReturn")
+})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# standardizeReturns() tests
+# Covers ~50 lines in fitFfmDT.R (lines 613-672)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Core functionality ──
+test_that("standardizeReturns modifies specObj correctly", {
+  std <- standardizeReturns(spec_for_resid)
+
+  expect_s3_class(std, "ffmSpec")
+  expect_equal(std$yVar, "StandardizedReturns")
+  expect_true(std$standardizedReturns)
+  expect_false(std$residualizedReturns)
+
+  expect_true("StandardizedReturns" %in% colnames(std$dataDT))
+  expect_true("sigmaGarch" %in% colnames(std$dataDT))
+  # Temp columns cleaned up
+  expect_false("sdReturns" %in% colnames(std$dataDT))
+  expect_false("ts" %in% colnames(std$dataDT))
+})
+
+test_that("StandardizedReturns equals RawReturn / sigmaGarch", {
+  std <- standardizeReturns(spec_for_resid)
+  raw <- std$dataDT[["RawReturn"]]
+  sigma <- std$dataDT[["sigmaGarch"]]
+  std_ret <- std$dataDT[["StandardizedReturns"]]
+  expect_equal(raw / sigma, std_ret)
+})
+
+test_that("sigmaGarch matches manual GARCH(1,1) recursion", {
+  alpha <- 0.1; beta_g <- 0.81
+  std <- standardizeReturns(spec_for_resid,
+                            GARCH.params = list(omega = 0.09, alpha = alpha,
+                                                beta = beta_g))
+
+  # Pick one asset and verify the recursion
+  dt <- data.table::copy(std$dataDT)
+  one <- dt[dt[[spec_for_resid$asset.var]] == "AA"]
+  data.table::setorderv(one, spec_for_resid$date.var)
+
+  sd_ret <- sd(one$RawReturn, na.rm = TRUE)
+  omega <- (1 - alpha - beta_g) * sd_ret^2
+  n <- nrow(one)
+  sigma2 <- numeric(n)
+  sigma2[1] <- omega + alpha * one$RawReturn[1]^2
+  for (i in 2:n) {
+    sigma2[i] <- omega + alpha * one$RawReturn[i]^2 + beta_g * sigma2[i - 1]
+  }
+  expect_equal(sqrt(sigma2), one$sigmaGarch, tolerance = 1e-12)
+})
+
+test_that("sigmaGarch values are strictly positive", {
+  std <- standardizeReturns(spec_for_resid)
+  expect_true(all(std$dataDT$sigmaGarch > 0))
+})
+
+test_that("custom GARCH params produce different results", {
+  std_default <- standardizeReturns(spec_for_resid)
+  std_custom <- standardizeReturns(
+    spec_for_resid,
+    GARCH.params = list(omega = 0.05, alpha = 0.15, beta = 0.75)
+  )
+  expect_false(
+    isTRUE(all.equal(std_default$dataDT$sigmaGarch,
+                     std_custom$dataDT$sigmaGarch)),
+    "Different GARCH params should produce different volatilities"
+  )
+})
+
+test_that("standardizeReturns does not mutate original specObj", {
+  orig_yVar <- spec_for_resid$yVar
+  orig_flag <- spec_for_resid$standardizedReturns
+  orig_ncol <- ncol(spec_for_resid$dataDT)
+  standardizeReturns(spec_for_resid)
+  expect_equal(spec_for_resid$yVar, orig_yVar)
+  expect_equal(spec_for_resid$standardizedReturns, orig_flag)
+  expect_equal(ncol(spec_for_resid$dataDT), orig_ncol)
+})
+
+test_that("standardized specObj can be fit through internal pipeline", {
+  std <- standardizeReturns(spec_for_resid)
+  std <- standardizeExposures(std)
+
+  mdlFit <- fitFfmDT(std, fit.method = "LS")
+  regStats <- extractRegressionStats(std, mdlFit)
+  result <- convert(std, mdlFit, regStats)
+
+  expect_s3_class(result, "ffm")
+  expect_true(nrow(result$factor.returns) > 0)
+  expect_true(all(!is.na(result$r2)))
 })
