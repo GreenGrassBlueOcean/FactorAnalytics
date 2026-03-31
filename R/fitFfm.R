@@ -256,10 +256,16 @@ fitFfm <- function(data, asset.var, ret.var, date.var, exposure.vars,
   if (!is.logical(full.resid.cov) || length(full.resid.cov) != 1) {
     stop("Invalid args: control parameter 'full.resid.cov' must be logical")
   }
-  if (!(resid.scaleType %in% c("stdDev","EWMA","robEWMA", "GARCH"))) {
-    stop("Invalid args: resid.scaleType must be 'stdDev','EWMA','robEWMA', or 'GARCH'")
+  if (!(tolower(resid.scaleType) %in% c("stddev","ewma","robustewma","robewma","garch"))) {
+    stop("Invalid args: resid.scaleType must be 'stdDev','EWMA','RobustEWMA', or 'GARCH'")
   }
-  if ((resid.scaleType != "stdDev") && !(fit.method %in% c("WLS","W-Rob"))) {
+  # Normalize legacy alias: "robEWMA" -> "RobustEWMA" so toupper() in fitFfmDT
+
+  # matches its match.arg choices ("ROBUSTEWMA").
+  if (tolower(resid.scaleType) == "robewma") {
+    resid.scaleType <- "RobustEWMA"
+  }
+  if ((tolower(resid.scaleType) != "stddev") && !(fit.method %in% c("WLS","W-Rob"))) {
     stop("Invalid args: resid.scaleType must be used with WLS or W-Rob")
   }
   if (!is.list(GARCH.params)) {

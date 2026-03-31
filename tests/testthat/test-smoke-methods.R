@@ -322,6 +322,51 @@ test_that("plot.ffm works with sector model", {
   expect_no_error(plot(fit_ffm_sector, which = 12))
 })
 
+# ── plot.ffm: additional coverage ─────────────────────────────────────────────
+
+test_that("plot.ffm group plots with character a.sub work (a.sub bug regression)", {
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  # This exercises the fixed a.sub assignment (was f.sub <- ... instead of a.sub <-)
+  assets <- fit_ffm_style$asset.names[1:3]
+  expect_no_error(
+    plot(fit_ffm_style, which = 1, a.sub = assets)
+  )
+})
+
+test_that("plot.ffm group plots with character f.sub work", {
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  expect_no_error(
+    plot(fit_ffm_style, which = 2, f.sub = fit_ffm_style$factor.names[1])
+  )
+})
+
+test_that("plot.ffm group plots 7-8 (corrplot) work", {
+  skip_if_not_installed("corrplot")
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  for (w in 7:8) {
+    expect_no_error(suppressWarnings(plot(fit_ffm_style, which = w)))
+  }
+})
+
+test_that("plot.ffm single-asset error when asset.name missing", {
+  expect_error(
+    plot(fit_ffm_style, plot.single = TRUE, which = 1),
+    "asset.name"
+  )
+})
+
+test_that("plot.tsfm group plots with character a.sub work (a.sub bug regression)", {
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  assets <- fit_tsfm_ls$asset.names[1:3]
+  expect_no_error(
+    plot(fit_tsfm_ls, which = 1, a.sub = assets)
+  )
+})
+
 test_that("plot.tsfm group plots do not error", {
   pdf(NULL)
   on.exit(dev.off(), add = TRUE)
@@ -343,6 +388,111 @@ test_that("plot.tsfm individual plots do not error", {
     )
   }
 })
+
+# ── plot.tsfm: additional coverage ─────────────────────────────────────────────
+
+test_that("plot.tsfm individual plots 15-17 (strucchange) work", {
+  skip_if_not_installed("strucchange")
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  asset <- fit_tsfm_ls$asset.names[1]
+  for (w in 15:17) {
+    expect_no_error(
+      plot(fit_tsfm_ls, plot.single = TRUE, asset.name = asset, which = w)
+    )
+  }
+})
+
+test_that("plot.tsfm individual plot 12 (skew-t density) works", {
+  skip_if_not_installed("sn")
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  asset <- fit_tsfm_ls$asset.names[1]
+  expect_no_error(
+    plot(fit_tsfm_ls, plot.single = TRUE, asset.name = asset, which = 12)
+  )
+})
+
+test_that("plot.tsfm individual plot 19 works with single-factor model", {
+  fit_1f <- fitTsfm(
+    asset.names = colnames(managers)[1:3],
+    factor.names = colnames(managers)[7],
+    rf.name = colnames(managers)[10],
+    data = managers
+  )
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  expect_no_error(
+    plot(fit_1f, plot.single = TRUE, asset.name = fit_1f$asset.names[1], which = 19)
+  )
+})
+
+test_that("plot.tsfm group plot 12 works with single-factor model", {
+  fit_1f <- fitTsfm(
+    asset.names = colnames(managers)[1:3],
+    factor.names = colnames(managers)[7],
+    rf.name = colnames(managers)[10],
+    data = managers
+  )
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  expect_no_error(
+    plot(fit_1f, which = 12, a.sub = 1:3, f.sub = 1)
+  )
+})
+
+test_that("plot.tsfm individual plot 18 works with DLS model", {
+  # Use single factor to avoid multi-panel plot.zoo prompting for input
+  fit_dls <- fitTsfm(
+    asset.names = colnames(managers)[1:3],
+    factor.names = colnames(managers)[7],
+    rf.name = colnames(managers)[10],
+    data = managers,
+    fit.method = "DLS"
+  )
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  expect_no_error(
+    plot(fit_dls, plot.single = TRUE, asset.name = fit_dls$asset.names[1], which = 18)
+  )
+})
+
+test_that("plot.tsfm individual plot 18 works with Robust model", {
+  skip_if_not_installed("RobStatTM")
+  # Use single factor to avoid multi-panel plot.zoo prompting for input
+  fit_rob <- fitTsfm(
+    asset.names = colnames(managers)[1:3],
+    factor.names = colnames(managers)[7],
+    rf.name = colnames(managers)[10],
+    data = managers,
+    fit.method = "Robust"
+  )
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  expect_no_error(
+    plot(fit_rob, plot.single = TRUE, asset.name = fit_rob$asset.names[1], which = 18)
+  )
+})
+
+test_that("plot.tsfm group plots with character f.sub work", {
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  expect_no_error(
+    plot(fit_tsfm_ls, which = 2, f.sub = c("EDHEC.LS.EQ", "SP500.TR"))
+  )
+})
+
+test_that("plot.tsfm group plots 7-8 (corrplot) work", {
+  skip_if_not_installed("corrplot")
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  for (w in 7:8) {
+    expect_no_error(suppressWarnings(plot(fit_tsfm_ls, which = w)))
+  }
+})
+
+# Skipping multi-plot which vector test: the plot function internally sets
+# par(ask=TRUE) which triggers interactive prompts even on pdf(NULL).
 
 # ===== STEP 3: Reporting function smoke tests ================================
 
@@ -389,6 +539,29 @@ test_that("repReturn plots without error", {
   for (w in 1:4) {
     expect_no_error(
       repReturn(fit_ffm_wls, isPlot = TRUE, isPrint = FALSE, which = w)
+    )
+  }
+})
+
+# ── repReturn: additional coverage ─────────────────────────────────────────────
+
+test_that("repReturn with named weights works", {
+  wts <- rep(1 / length(fit_ffm_wls$asset.names), length(fit_ffm_wls$asset.names))
+  names(wts) <- fit_ffm_wls$asset.names
+  expect_no_error(
+    capture.output(
+      repReturn(fit_ffm_wls, weights = wts, isPlot = FALSE, isPrint = TRUE)
+    )
+  )
+})
+
+test_that("repReturn plots with titleText=FALSE work", {
+  pdf(NULL)
+  on.exit(dev.off(), add = TRUE)
+  for (w in 1:4) {
+    expect_no_error(
+      repReturn(fit_ffm_wls, isPlot = TRUE, isPrint = FALSE,
+                which = w, titleText = FALSE)
     )
   }
 })

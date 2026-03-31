@@ -42,15 +42,15 @@ architecture reference are in:
   `(Market, style, cat)` to match `factor.names`).
   Each fixture stores only numeric components (no full `lm`/`ffm` objects).
 - **Test files:** 24 files in `tests/testthat/`:
-  - `test-fitFfm.R` — 5 FFM model branches + structure/dimension invariants
-  - `test-fitTsfm.R` — 3 TSFM paths + manual `lm()` cross-validation
+  - `test-fitFfm.R` — 5 FFM model branches + structure/dimension invariants + Rob standalone + GARCH/RobustEWMA/rob.stats residual scaling + robEWMA alias (Coverage Expansion)
+  - `test-fitTsfm.R` — 3 TSFM paths + DLS + stepwise + subsets + LARS cv + single-asset + manual `lm()` cross-validation (Coverage Expansion)
   - `test-fmCov.R` — Covariance matrices + identity verification
   - `test-riskDecomp.R` — fmSdDecomp, fmVaRDecomp, fmEsDecomp
   - `test-portDecomp.R` — Portfolio-level Sd/VaR/ES decomposition
   - `test-fmRsq.R` — R-squared computation
-  - `test-fmTstats.R` — T-statistics computation
+  - `test-fmTstats.R` — T-statistics computation + all 4 plot types + isPrint + style-only Branch 2 + title=FALSE (Coverage Expansion)
   - `test-input-validation.R` — Error handling, weight validation, column-existence checks (Phase 5)
-  - `test-smoke-methods.R` — 91 smoke tests for S3 methods, plots, reporting (Phase 0.5)
+  - `test-smoke-methods.R` — 138 smoke tests for S3 methods, plots, reporting. Expanded: plot.tsfm plots 12/15-17/19, DLS/Robust rolling, character f.sub/a.sub, corrplot; plot.ffm character a.sub/f.sub, corrplot, single-asset error; repReturn named weights, titleText=FALSE (Coverage Expansion)
   - `test-vectorize.R` — 15 assertions: EWMA/GARCH vectorization, Robust EWMA, stripped `lm` (Phase 2)
   - `test-unbalanced-panel.R` — 26 assertions: synthetic unbalanced panel (Phase 4.1)
   - `test-fmCov-invariants.R` — ~60 assertions: 6 invariants × 8 model configs (Phase 4.2)
@@ -69,8 +69,8 @@ architecture reference are in:
   - `test-repRisk.R` — 29 assertions: repRisk baseline smoke (tsfm+ffm), S3 dispatch, bug regressions (5 bugs), decomp×risk structure checks, plot paths (Phase 10)
   - `test-fmmc.R` — 51 assertions: fmmc() structure + Cartesian join regression + fmmc.estimate.se() with/without SE + .fmmc.default.args + fmmcSemiParam() Normal/Cornish-Fisher/skew-t/empirical residuals + block bootstrap + input validation (Post-Phase 10)
   - `test-assetDecomp.R` — 32 assertions: assetDecomp() Sd/VaR/ES × np/normal decomposition, structure checks, percentage-sums-to-100, ES≤VaR ordering (incl. normal ES sign regression), NULL/equal weights, slot-based column access (Post-Phase 10)
-- **Total:** 913 assertions across 27 test files, 0 failures, 0 skips.
-- **Coverage:** 68.4% (Codecov, 2026-03-31). Previously 57.8% at Phase 9 commit `526d2c3`. Baseline was 46.4% at commit `4b58a6e`.
+- **Total:** 993 assertions across 27 test files, 0 failures, 0 skips.
+- **Coverage:** 68.4% → TBD after push (Codecov). Previously 57.8% at Phase 9 commit `526d2c3`. Baseline was 46.4% at commit `4b58a6e`.
 - **Tolerances:** Coefficients/factor returns `1e-10`, covariance `1e-8`, risk decomp `1e-6`.
 - **Setup:** `tests/testthat/setup.R` loads all bundled datasets and prepares the
   `dat145` subset used across multiple test files.
@@ -376,6 +376,40 @@ on line 591 (`fitted.tsfm`).
 **Fix:** Detect POSIXct index and use the stored timezone (or `Sys.timezone()` when
 the attribute is empty) for the `as.Date()` conversion. Same pattern as the
 Phase 9.7 fix in `normalize_fm_residuals`.
+
+### `fitFfm()` `resid.scaleType` naming mismatch (`"robEWMA"` vs `"RobustEWMA"`) — FIXED
+
+**Severity:** Medium — RobustEWMA residual scaling was completely unreachable through
+the public `fitFfm()` API.
+
+`fitFfm()` validated `resid.scaleType` against `c("stdDev","EWMA","robEWMA","GARCH")`.
+`fitFfmDT()` and `calcAssetWeightsForRegression()` both did `toupper(resid.scaleType)`
+then `match.arg()` against `c("STDDEV","EWMA","ROBUSTEWMA","GARCH")`. Since
+`toupper("robEWMA")` = `"ROBEWMA"` ≠ `"ROBUSTEWMA"`, any user passing `"robEWMA"`
+through `fitFfm()` got a cryptic `match.arg` error from `fitFfmDT()`.
+
+**Fix (applied to `R/fitFfm.R`):**
+- Changed `fitFfm()` validation to use `tolower()` matching, accepting both
+  `"robEWMA"` (legacy) and `"RobustEWMA"` (canonical).
+- Added normalization: `"robEWMA"` → `"RobustEWMA"` before passing to `fitFfmDT()`.
+- Also made the `resid.scaleType != "stdDev"` guard case-insensitive.
+
+### `plot.ffm()` / `plot.tsfm()` character `a.sub` assignment bug — FIXED
+
+**Severity:** Low — character asset subsetting in group plots silently overwrote
+`f.sub` instead of `a.sub`, producing wrong factor subsetting.
+
+Both `plot.ffm.R` line 349 and `plot.tsfm.R` line 447 had:
+```r
+if (is.character(a.sub)) {
+  f.sub <- which(x$asset.names==a.sub)   # BUG: should be a.sub <-
+}
+```
+This assigned the asset index to `f.sub` (factor subset) instead of `a.sub` (asset
+subset). The bug was latent because all tests used numeric indices.
+
+**Fix:** Changed `f.sub <-` to `a.sub <-` and `==` to `%in%` (to support vector input)
+in both files.
 
 ## Performance Optimisations (Phase 2)
 

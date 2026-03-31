@@ -141,3 +141,89 @@ test_that("fitFfm dimensions are internally consistent", {
   expect_equal(colnames(fit$beta), fit$factor.names)
   expect_equal(names(fit$resid.var), fit$asset.names)
 })
+
+# ── Standalone Rob (no WLS second pass) ──────────────────────────────────────
+
+test_that("fitFfm Rob (standalone) produces valid fit", {
+  skip_if_not_installed("RobStatTM")
+  skip_if_not_installed("robustbase")
+  fit <- fitFfm(
+    data = factorDataSetDjia5Yrs,
+    asset.var = "TICKER", ret.var = "RETURN", date.var = "DATE",
+    exposure.vars = c("P2B", "EV2S"),
+    fit.method = "Rob"
+  )
+  expect_s3_class(fit, "ffm")
+  expect_equal(nrow(fit$beta), length(fit$asset.names))
+  expect_equal(ncol(fit$factor.returns), length(fit$factor.names))
+  expect_equal(length(fit$resid.var), length(fit$asset.names))
+  expect_true(all(fit$resid.var > 0))
+})
+
+# ── GARCH residual scaling ───────────────────────────────────────────────────
+
+test_that("fitFfm WLS + GARCH residual scaling produces valid fit", {
+  fit <- fitFfm(
+    data = dat145,
+    asset.var = "TICKER", ret.var = "RETURN", date.var = "DATE",
+    exposure.vars = c("SECTOR", "ROE", "BP"),
+    fit.method = "WLS",
+    resid.scaleType = "GARCH"
+  )
+  expect_s3_class(fit, "ffm")
+  expect_equal(nrow(fit$beta), length(fit$asset.names))
+  expect_true(all(fit$resid.var > 0))
+})
+
+# ── RobustEWMA residual scaling ──────────────────────────────────────────────
+
+test_that("fitFfm WLS + RobustEWMA residual scaling produces valid fit", {
+  fit <- fitFfm(
+    data = dat145,
+    asset.var = "TICKER", ret.var = "RETURN", date.var = "DATE",
+    exposure.vars = c("SECTOR", "ROE", "BP"),
+    fit.method = "WLS",
+    resid.scaleType = "RobustEWMA"
+  )
+  expect_s3_class(fit, "ffm")
+  expect_equal(nrow(fit$beta), length(fit$asset.names))
+  expect_true(all(fit$resid.var > 0))
+})
+
+test_that("fitFfm accepts legacy 'robEWMA' alias", {
+  # Pre-existing naming mismatch: fitFfm validated "robEWMA" but fitFfmDT
+  # expected "RobustEWMA". Now normalized via tolower() alias.
+  fit <- fitFfm(
+    data = dat145,
+    asset.var = "TICKER", ret.var = "RETURN", date.var = "DATE",
+    exposure.vars = c("SECTOR", "ROE", "BP"),
+    fit.method = "WLS",
+    resid.scaleType = "robEWMA"
+  )
+  expect_s3_class(fit, "ffm")
+})
+
+# ── rob.stats = TRUE ─────────────────────────────────────────────────────────
+
+test_that("fitFfm WLS + rob.stats uses robust residual variance", {
+  skip_if_not_installed("robustbase")
+  fit <- fitFfm(
+    data = dat145,
+    asset.var = "TICKER", ret.var = "RETURN", date.var = "DATE",
+    exposure.vars = c("SECTOR", "ROE", "BP"),
+    fit.method = "WLS",
+    rob.stats = TRUE
+  )
+  expect_s3_class(fit, "ffm")
+  expect_true(all(fit$resid.var > 0))
+  # Robust residual variance should differ from standard variance
+  fit_std <- fitFfm(
+    data = dat145,
+    asset.var = "TICKER", ret.var = "RETURN", date.var = "DATE",
+    exposure.vars = c("SECTOR", "ROE", "BP"),
+    fit.method = "WLS",
+    rob.stats = FALSE
+  )
+  expect_false(isTRUE(all.equal(fit$resid.var, fit_std$resid.var)),
+               info = "Robust and standard resid.var should differ")
+})

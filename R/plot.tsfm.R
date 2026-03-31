@@ -444,7 +444,7 @@ plot.tsfm <- function(x, which=NULL, f.sub=1:2, a.sub=1:6,
       f.sub <- which(f.sub %in% x$factor.names)
     }
     if (is.character(a.sub)) {
-      f.sub <- which(x$asset.names==a.sub)
+      a.sub <- which(x$asset.names %in% a.sub)
     }
 
     # plot selection

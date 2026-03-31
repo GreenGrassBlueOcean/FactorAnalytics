@@ -1,7 +1,7 @@
 # =============================================================================
 # test-fitTsfm.R — Regression tests for time series factor model fitting
 #
-# Covers: LS, Robust, and lars variable selection paths.
+# Covers: LS, DLS, Robust, lars, stepwise, subsets variable selection paths.
 # Uses the PerformanceAnalytics::managers dataset.
 # =============================================================================
 
@@ -103,4 +103,128 @@ test_that("fitTsfm returns expected object class and slots", {
   expect_equal(nrow(fit$beta), length(fit$asset.names))
   expect_equal(length(fit$r2), length(fit$asset.names))
   expect_equal(length(fit$resid.sd), length(fit$asset.names))
+})
+
+# ── DLS fitting ──────────────────────────────────────────────────────────────
+
+test_that("fitTsfm DLS produces valid fit", {
+  fit <- fitTsfm(
+    asset.names = colnames(managers[, 1:6]),
+    factor.names = colnames(managers[, 7:9]),
+    rf.name = colnames(managers[, 10]),
+    data = managers,
+    fit.method = "DLS"
+  )
+  expect_s3_class(fit, "tsfm")
+  expect_equal(fit$fit.method, "DLS")
+  expect_equal(nrow(fit$beta), 6)
+  expect_equal(ncol(fit$beta), 3)
+  # DLS betas should differ from LS betas (decay weighting)
+  fit_ls <- fitTsfm(
+    asset.names = colnames(managers[, 1:6]),
+    factor.names = colnames(managers[, 7:9]),
+    rf.name = colnames(managers[, 10]),
+    data = managers,
+    fit.method = "LS"
+  )
+  expect_false(isTRUE(all.equal(fit$beta, fit_ls$beta)),
+               info = "DLS and LS should produce different betas")
+})
+
+# ── Stepwise variable selection ──────────────────────────────────────────────
+
+test_that("fitTsfm stepwise selects subset of factors", {
+  fit <- suppressWarnings(fitTsfm(
+    asset.names = colnames(managers[, 1:6]),
+    factor.names = colnames(managers[, 7:9]),
+    rf.name = colnames(managers[, 10]),
+    data = managers,
+    variable.selection = "stepwise"
+  ))
+  expect_s3_class(fit, "tsfm")
+  expect_equal(fit$variable.selection, "stepwise")
+  # All selected factors should be from the original set
+  for (a in fit$asset.names) {
+    selected <- names(which(!is.na(fit$beta[a, ]) & fit$beta[a, ] != 0))
+    expect_true(all(selected %in% fit$factor.names),
+                info = paste("unexpected factor for", a))
+  }
+})
+
+test_that("fitTsfm DLS + stepwise works", {
+  fit <- suppressWarnings(fitTsfm(
+    asset.names = colnames(managers[, 1:6]),
+    factor.names = colnames(managers[, 7:9]),
+    rf.name = colnames(managers[, 10]),
+    data = managers,
+    fit.method = "DLS",
+    variable.selection = "stepwise"
+  ))
+  expect_s3_class(fit, "tsfm")
+  expect_equal(fit$fit.method, "DLS")
+  expect_equal(fit$variable.selection, "stepwise")
+})
+
+# ── Subsets variable selection ───────────────────────────────────────────────
+
+test_that("fitTsfm subsets selects factors by BIC", {
+  skip_if_not_installed("leaps")
+  fit <- fitTsfm(
+    asset.names = colnames(managers[, 1:6]),
+    factor.names = colnames(managers[, 7:9]),
+    rf.name = colnames(managers[, 10]),
+    data = managers,
+    variable.selection = "subsets"
+  )
+  expect_s3_class(fit, "tsfm")
+  expect_equal(fit$variable.selection, "subsets")
+  expect_equal(nrow(fit$beta), 6)
+})
+
+# ── LARS cv criterion ────────────────────────────────────────────────────────
+
+test_that("fitTsfm lars with cv criterion works", {
+  skip_if_not_installed("lars")
+  fit <- fitTsfm(
+    asset.names = colnames(managers[, 1:6]),
+    factor.names = colnames(managers[, 7:9]),
+    rf.name = colnames(managers[, 10]),
+    data = managers,
+    variable.selection = "lars",
+    lars.criterion = "cv"
+  )
+  expect_s3_class(fit, "tsfm")
+  expect_equal(fit$variable.selection, "lars")
+})
+
+# ── Single-asset model ───────────────────────────────────────────────────────
+
+test_that("fitTsfm works with a single asset", {
+  fit <- fitTsfm(
+    asset.names = colnames(managers)[1],
+    factor.names = colnames(managers[, 7:9]),
+    rf.name = colnames(managers[, 10]),
+    data = managers
+  )
+  expect_s3_class(fit, "tsfm")
+  expect_equal(length(fit$asset.names), 1)
+  expect_equal(nrow(fit$beta), 1)
+  # fitted() and residuals() should return xts with correct dimensions
+  expect_equal(ncol(fitted(fit)), 1)
+  expect_equal(ncol(residuals(fit)), 1)
+})
+
+test_that("fitTsfm lars works with a single asset", {
+  skip_if_not_installed("lars")
+  fit <- fitTsfm(
+    asset.names = colnames(managers)[1],
+    factor.names = colnames(managers[, 7:9]),
+    rf.name = colnames(managers[, 10]),
+    data = managers,
+    variable.selection = "lars"
+  )
+  expect_s3_class(fit, "tsfm")
+  expect_equal(length(fit$asset.names), 1)
+  expect_equal(ncol(fitted(fit)), 1)
+  expect_equal(ncol(residuals(fit)), 1)
 })
