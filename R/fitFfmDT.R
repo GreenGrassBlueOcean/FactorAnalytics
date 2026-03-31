@@ -314,7 +314,9 @@ specFfm <- function(data, asset.var, ret.var, date.var, exposure.vars,
   obj <- list()
   class(obj) <- "ffmSpec"
   # prep the data
-  obj$dataDT <- ( data.table::as.data.table(data))[, c(date.var,asset.var,ret.var,exposure.vars), with = FALSE]
+  keep_cols <- c(date.var, asset.var, ret.var, exposure.vars)
+  if (!is.null(weight.var)) keep_cols <- c(keep_cols, weight.var)
+  obj$dataDT <- data.table::as.data.table(data)[, keep_cols, with = FALSE]
   obj$dataDT[ , eval(date.var) := as.Date(get(date.var))]
   # mido important change of order
   data.table::setkeyv(obj$dataDT,c(asset.var, date.var))

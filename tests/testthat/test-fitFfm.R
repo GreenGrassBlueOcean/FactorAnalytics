@@ -227,3 +227,76 @@ test_that("fitFfm WLS + rob.stats uses robust residual variance", {
   expect_false(isTRUE(all.equal(fit$resid.var, fit_std$resid.var)),
                info = "Robust and standard resid.var should differ")
 })
+
+# --- print.ffmSpec (18 uncovered lines in fitFfmDT.R) ---
+test_that("print.ffmSpec produces expected output", {
+  spec <- specFfm(
+    data = dat145, asset.var = "TICKER", ret.var = "RETURN",
+    date.var = "DATE", exposure.vars = c("SECTOR", "ROE", "BP")
+  )
+  out <- capture.output(print(spec))
+  expect_true(any(grepl("fundamental factor model specification", out)))
+  expect_true(any(grepl("TICKER", out)))
+  expect_true(any(grepl("145 unique assets", out)))
+  expect_true(any(grepl("RETURN", out)))
+})
+
+# --- rob.stats=TRUE: robust covariance paths (lines 1047-1114) ---
+test_that("fitFfm with rob.stats=TRUE produces robust covariance estimates", {
+  skip_if_not_installed("robustbase")
+  skip_if_not_installed("RobStatTM")
+  # Style-only model to avoid singular robust factor covariance
+  fit_rob <- fitFfm(
+    data = dat145, asset.var = "TICKER", ret.var = "RETURN",
+    date.var = "DATE", exposure.vars = c("ROE", "BP", "SIZE"),
+    fit.method = "LS", z.score = "crossSection", rob.stats = TRUE
+  )
+  fit_std <- fitFfm(
+    data = dat145, asset.var = "TICKER", ret.var = "RETURN",
+    date.var = "DATE", exposure.vars = c("ROE", "BP", "SIZE"),
+    fit.method = "LS", z.score = "crossSection", rob.stats = FALSE
+  )
+  expect_equal(dim(fit_rob$factor.cov), c(3L, 3L))
+  expect_equal(dim(fit_rob$resid.cov), dim(fit_std$resid.cov))
+  # Robust and standard estimates should differ
+  expect_false(isTRUE(all.equal(fit_rob$factor.cov, fit_std$factor.cov)))
+  expect_false(isTRUE(all.equal(fit_rob$resid.cov, fit_std$resid.cov)))
+})
+
+# --- weight.var: weighted z-score standardization (lines 456-458) ---
+test_that("fitFfm with weight.var uses weighted z-scores", {
+  dat_w <- dat145
+  dat_w$MKT_CAP <- abs(dat_w$SIZE) + 1
+  fit_wt <- fitFfm(
+    data = dat_w, asset.var = "TICKER", ret.var = "RETURN",
+    date.var = "DATE", exposure.vars = c("SECTOR", "ROE", "BP"),
+    addIntercept = TRUE, fit.method = "WLS", z.score = "crossSection",
+    weight.var = "MKT_CAP"
+  )
+  fit_no_wt <- fitFfm(
+    data = dat_w, asset.var = "TICKER", ret.var = "RETURN",
+    date.var = "DATE", exposure.vars = c("SECTOR", "ROE", "BP"),
+    addIntercept = TRUE, fit.method = "WLS", z.score = "crossSection"
+  )
+  expect_equal(dim(fit_wt$beta), dim(fit_no_wt$beta))
+  # Weighted and unweighted z-scores should produce different factor returns
+  expect_false(isTRUE(all.equal(fit_wt$factor.returns, fit_no_wt$factor.returns)))
+})
+
+# --- rob.stats=TRUE z-score path (lines 469-471 in standardizeExposures) ---
+test_that("fitFfm with rob.stats=TRUE uses robust z-scores (median/mad)", {
+  skip_if_not_installed("robustbase")
+  skip_if_not_installed("RobStatTM")
+  fit_rob <- fitFfm(
+    data = dat145, asset.var = "TICKER", ret.var = "RETURN",
+    date.var = "DATE", exposure.vars = c("ROE", "BP"),
+    fit.method = "LS", z.score = "crossSection", rob.stats = TRUE
+  )
+  fit_std <- fitFfm(
+    data = dat145, asset.var = "TICKER", ret.var = "RETURN",
+    date.var = "DATE", exposure.vars = c("ROE", "BP"),
+    fit.method = "LS", z.score = "crossSection", rob.stats = FALSE
+  )
+  # Robust z-scores (median/mad) differ from standard z-scores (mean/sd)
+  expect_false(isTRUE(all.equal(fit_rob$factor.returns, fit_std$factor.returns)))
+})

@@ -25,6 +25,31 @@ test_that("specFfm catches basic parameter errors", {
                "cannot also be an exposure")
 })
 
+test_that("specFfm catches remaining type errors (date.var, ret.var, exposure.vars, weight.var, rob.stats)", {
+  djia <- factorDataSetDjia5Yrs
+  expect_error(specFfm(data = djia, asset.var = "TICKER",
+                       ret.var = "RETURN", date.var = 42,
+                       exposure.vars = "P2B"),
+               "date.var must be a character")
+  expect_error(specFfm(data = djia, asset.var = "TICKER",
+                       ret.var = 42, date.var = "DATE",
+                       exposure.vars = "P2B"),
+               "ret.var must be a character")
+  expect_error(specFfm(data = djia, asset.var = "TICKER",
+                       ret.var = "RETURN", date.var = "DATE",
+                       exposure.vars = 42),
+               "exposure.vars must be a character")
+  # weight.var = 42: coerced to "42", hits column-not-found before type check
+  expect_error(specFfm(data = djia, asset.var = "TICKER",
+                       ret.var = "RETURN", date.var = "DATE",
+                       exposure.vars = "P2B", weight.var = 42),
+               "not found in data")
+  expect_error(specFfm(data = djia, asset.var = "TICKER",
+                       ret.var = "RETURN", date.var = "DATE",
+                       exposure.vars = "P2B", rob.stats = "yes"),
+               "rob.stats.*must be logical")
+})
+
 test_that("specFfm catches missing columns in data", {
   expect_error(specFfm(data = factorDataSetDjia5Yrs, asset.var = "TICKER",
                        ret.var = "RETURN", date.var = "DATE",
