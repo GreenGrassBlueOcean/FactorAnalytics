@@ -301,7 +301,7 @@ fitFfm <- function(data, asset.var, ret.var, date.var, exposure.vars,
 
   # Standardize the returns if stdReturn = TRUE
   if (stdReturn) {
-    standardizeReturns(specObj = spec1, GARCH.params = GARCH.params)
+    spec1 <- standardizeReturns(specObj = spec1, GARCH.params = GARCH.params)
   }
 
 

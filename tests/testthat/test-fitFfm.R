@@ -300,3 +300,40 @@ test_that("fitFfm with rob.stats=TRUE uses robust z-scores (median/mad)", {
   # Robust z-scores (median/mad) differ from standard z-scores (mean/sd)
   expect_false(isTRUE(all.equal(fit_rob$factor.returns, fit_std$factor.returns)))
 })
+
+# --- stdReturn=TRUE: GARCH-standardized returns (fitFfm.R lines 303-305) ---
+test_that("fitFfm with stdReturn=TRUE produces different factor returns", {
+  fit_plain <- fitFfm(
+    data = dat145, asset.var = "TICKER", ret.var = "RETURN",
+    date.var = "DATE", exposure.vars = c("SECTOR", "ROE", "BP"),
+    stdReturn = FALSE
+  )
+  fit_std <- fitFfm(
+    data = dat145, asset.var = "TICKER", ret.var = "RETURN",
+    date.var = "DATE", exposure.vars = c("SECTOR", "ROE", "BP"),
+    stdReturn = TRUE
+  )
+  expect_s3_class(fit_std, "ffm")
+  expect_true(all(!is.na(fit_std$r2)))
+  # Standardization changes the regressand, so factor returns must differ
+  expect_false(
+    isTRUE(all.equal(as.matrix(fit_plain$factor.returns),
+                     as.matrix(fit_std$factor.returns))),
+    "stdReturn=TRUE should change factor returns (regression for no-op bug)"
+  )
+})
+
+test_that("fitFfm stdReturn=TRUE preserves object structure", {
+  fit_std <- fitFfm(
+    data = dat145, asset.var = "TICKER", ret.var = "RETURN",
+    date.var = "DATE", exposure.vars = c("SECTOR", "ROE", "BP"),
+    stdReturn = TRUE
+  )
+  # Same structure as non-std model
+  expect_true("factor.returns" %in% names(fit_std))
+  expect_true("residuals" %in% names(fit_std))
+  expect_true("beta" %in% names(fit_std))
+  expect_true("r2" %in% names(fit_std))
+  n_dates <- length(unique(dat145$DATE)) - 1L  # -1 for lagExposures
+  expect_equal(length(fit_std$r2), n_dates)
+})

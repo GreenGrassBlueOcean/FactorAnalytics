@@ -1,11 +1,12 @@
 # test-residualizeReturns.R
-# Tests for residualizeReturns() + print.ffmSpec conditional messages
+# Tests for specFfm helper functions: residualizeReturns(), standardizeReturns(),
+# lagExposures(), and print.ffmSpec conditional messages.
 #
-# Covers ~53 lines in fitFfmDT.R:
-#   - residualizeReturns() lines 536-599 (benchmark/rfRate merge, excess return
-#     regression, yVar update, residualizedReturns flag)
-#   - print.ffmSpec lines 1530-1535 (conditional messages for
-#     standardized/residualized returns)
+# Covers lines in fitFfmDT.R:
+#   - residualizeReturns() lines 536-599
+#   - standardizeReturns() lines 613-672
+#   - lagExposures() lines 385-410
+#   - print.ffmSpec lines 1530-1535
 
 library(testthat)
 library(xts)
@@ -243,4 +244,78 @@ test_that("standardized specObj can be fit through internal pipeline", {
   expect_s3_class(result, "ffm")
   expect_true(nrow(result$factor.returns) > 0)
   expect_true(all(!is.na(result$r2)))
+})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# lagExposures() tests
+# Covers ~25 lines in fitFfmDT.R (lines 385-410)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+spec_for_lag <- specFfm(
+  data = dat145, asset.var = "TICKER", ret.var = "RETURN",
+  date.var = "DATE", exposure.vars = c("SECTOR", "ROE", "BP")
+)
+
+test_that("lagExposures sets lagged flag and drops first period", {
+  n_assets <- length(unique(spec_for_lag$dataDT$TICKER))
+  n_dates_before <- length(unique(spec_for_lag$dataDT$DATE))
+  n_rows_before <- nrow(spec_for_lag$dataDT)
+
+  lagged <- lagExposures(spec_for_lag)
+
+  expect_true(lagged$lagged)
+  n_dates_after <- length(unique(lagged$dataDT$DATE))
+  expect_equal(n_dates_after, n_dates_before - 1L)
+  expect_equal(nrow(lagged$dataDT), n_rows_before - n_assets)
+})
+
+test_that("lagExposures shifts numeric exposures by one period", {
+  lagged <- lagExposures(spec_for_lag)
+
+  orig <- data.table::copy(spec_for_lag$dataDT)
+  lag_dt <- data.table::copy(lagged$dataDT)
+  data.table::setorderv(orig, c("TICKER", "DATE"))
+  data.table::setorderv(lag_dt, c("TICKER", "DATE"))
+
+  aa_orig <- orig[TICKER == "AA"]
+  aa_lag <- lag_dt[TICKER == "AA"]
+
+  # Lagged period 1 (date index 2) should have original period 1 values
+  expect_equal(aa_lag$ROE[1], aa_orig$ROE[1])
+  expect_equal(aa_lag$BP[1], aa_orig$BP[1])
+  # Lagged period 2 should have original period 2 values
+  expect_equal(aa_lag$ROE[2], aa_orig$ROE[2])
+})
+
+test_that("lagExposures also shifts character exposures", {
+  lagged <- lagExposures(spec_for_lag)
+
+  orig <- data.table::copy(spec_for_lag$dataDT)
+  lag_dt <- data.table::copy(lagged$dataDT)
+  data.table::setorderv(orig, c("TICKER", "DATE"))
+  data.table::setorderv(lag_dt, c("TICKER", "DATE"))
+
+  aa_orig <- orig[TICKER == "AA"]
+  aa_lag <- lag_dt[TICKER == "AA"]
+
+  # SECTOR at lagged date 2 should be original SECTOR at date 1
+  expect_equal(aa_lag$SECTOR[1], aa_orig$SECTOR[1])
+})
+
+test_that("lagExposures does not mutate original specObj", {
+  orig_nrow <- nrow(spec_for_lag$dataDT)
+  orig_flag <- spec_for_lag$lagged
+  lagExposures(spec_for_lag)
+  expect_equal(nrow(spec_for_lag$dataDT), orig_nrow)
+  expect_equal(spec_for_lag$lagged, orig_flag)
+})
+
+test_that("lagExposures preserves key and idx column", {
+  lagged <- lagExposures(spec_for_lag)
+  expect_equal(data.table::key(lagged$dataDT), c("TICKER", "DATE"))
+  expect_true("idx" %in% colnames(lagged$dataDT))
+  # idx should restart from 1 for each asset
+  idx_mins <- lagged$dataDT[, min(idx), by = TICKER]$V1
+  expect_true(all(idx_mins == 1L))
 })
